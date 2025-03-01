@@ -1,0 +1,12 @@
+services:
+  plutarch:
+    image: plutarch_heavensbee_bot
+    build: 
+      context: .
+      dockerfile: ./docker/Dockerfile
+      args:
+        BUILDER_TAG: 3.13.2-alpine3.21
+        BASE_TAG: ""
+        DEV_TAG: ""
+    volumes:
+      - ./src/settings.toml:/app/settings.toml
