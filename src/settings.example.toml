@@ -1,2 +1,2 @@
 [telegram]
-bot_token = "exampleToken"
+token = "exampleToken"
