@@ -8,7 +8,7 @@ TEST_DIR = tests
 # Define paths and variables
 PYTHON ?= python3
 PIP ?= $(VENV_DIR)/bin/pip
-SETTINGS_FILE ?= settings.example.toml
+SETTINGS_FILE ?= settings.toml
 
 # Default target to run the program
 all: setup test run  ## Run setup, tests, and execute the program (default)
