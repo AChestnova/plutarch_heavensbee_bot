@@ -4,7 +4,6 @@ Set of functions to manipulate Goodgle spreadsheet
 from dataclasses import dataclass
 from datetime import time
 
-
 @dataclass
 class Player:
     user_name: str
@@ -33,11 +32,7 @@ class AvailableSlot:
     requested_at: time
     user_name: str
     prio: int
-
-
-class Database():
-    pass
-
+    
 class SpreadsheetHelper:
     """Set of functions to manipulate Goodgle spreadsheet"""
     @staticmethod

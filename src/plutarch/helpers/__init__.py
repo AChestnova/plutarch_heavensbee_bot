@@ -1,4 +1,4 @@
 """
 Collection of helper functions
 """
-from .spreadsheet_helper import SpreadsheetHelper
+from .database_helper import Database
