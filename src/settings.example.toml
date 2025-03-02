@@ -1,2 +1,7 @@
 [telegram]
 token = "exampleToken"
+
+[google]
+credentials_file = "google_sa_secret_example.json"
+sheet_id = "1N69idL-hYOtHsjphQxR26_ANnKas_arPR6fpBGaCGuY"
+scopes = ["https://www.googleapis.com/auth/spreadsheets"]
