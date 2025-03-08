@@ -3,5 +3,9 @@ token = "exampleToken"
 
 [google]
 credentials_file = "google_sa_secret_example.json"
-sheet_id = "1N69idL-hYOtHsjphQxR26_ANnKas_arPR6fpBGaCGuY"
+sheet_id = "fljfslkjdL-example"
 scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+players_sheet_id = 18384756576393
+games_sheet_id = 73747643536
+registrations_sheet_id = 12334556788
+auctions_sheet_id = 163738484995
