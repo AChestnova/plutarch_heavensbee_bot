@@ -1,35 +1,37 @@
 """
 Set of functions to manipulate Goodgle spreadsheet
 """
+import time
+import datetime
 from dataclasses import dataclass
-from datetime import time
+from typing import Optional
 
 @dataclass
 class Player:
     user_name: str
-    name: str
-    balance: int
-    can_sell: bool
-    prio: int
+    name: Optional[str] = ""
+    balance: Optional[int] = 0
+    can_sell: Optional[bool] = False
+    prio: Optional[int] = 2
 
 @dataclass
 class Game:
-    game_date: time
-    capacity: int
-    price_per_player: int
-    is_summarized: bool
+    game_date: datetime.date
+    cap: Optional[int] = 14
+    price: Optional[int] = 11
+    is_summarized: Optional[bool] = False
 
 @dataclass
 class Registration:
+    requested_at: int
+    game_date: datetime.date
     user_name: str
-    game_date: time
-    requested_at: time
     prio: int
 
 @dataclass
 class AvailableSlot:
+    requested_at: int
     game_date: time
-    requested_at: time
     user_name: str
     prio: int
     

@@ -14,8 +14,11 @@ ConversationHandler.
 Send /start to initiate the conversation.
 Press Ctrl-C on the command line to stop the bot.
 """
+
 import logging
 
+from .plutarch import Plutarch
+from .helpers.date_helpers import next_sunday, sunday_in_two_weeks
 from dynaconf import Dynaconf
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -35,6 +38,8 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
+plutarch = Plutarch()
+
 settings = Dynaconf(
     envvar_prefix="PLUTARCH",
     settings_file="settings.toml",
@@ -51,7 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Send message on `/start`."""
     # Get user that sent /start and log his name
     user = update.message.from_user
-    logger.info("User %s started the conversation.", user.first_name)
+    logger.info("User started the conversation. ID: %s, FIRST: %s, LAST: %s", user.id, user.first_name, user.last_name)
     # Build InlineKeyboard where each button has a displayed text
     # and a string as callback_data
     # The keyboard is a list of button rows, where each row is in turn
@@ -66,7 +71,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Greetings! What may I help you with?", reply_markup=reply_markup)
     # Tell ConversationHandler that we're in state `FIRST` now
     return START_ROUTES
-
 
 async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Prompt same text & keyboard as `start` does but not as new message"""
@@ -86,7 +90,6 @@ async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # interactive menu.
     await query.edit_message_text(text="Of course! What else?", reply_markup=reply_markup)
     return START_ROUTES
-
 
 async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons"""
@@ -109,22 +112,44 @@ async def join_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
 
-    game_date = "2025-03-08"
+    keyboard = [
+    [
+        InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
+        InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
+    ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    game_date = next_sunday().strftime("%Y-%m-%d")
+    plutarch.register("kchestnov", game_date)
+
+    reply = f"Successfully registered on {game_date}!"
     await query.edit_message_text(
-        text=f"Successfully registered on {game_date}. See you next time!"
+        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
     )
-    # Transfer to conversation state `SECOND`
-    return ConversationHandler.END
+    return END_ROUTES
 
 async def join_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons. This is the end point of the conversation."""
     query = update.callback_query
     await query.answer()
 
-    game_date = "2025-03-16"
-    await query.answer()
-    await query.edit_message_text(text=f"Successfully registered on {game_date}! See you next time!")
-    return ConversationHandler.END
+    keyboard = [
+    [
+        InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
+        InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
+    ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    game_date = sunday_in_two_weeks().strftime("%Y-%m-%d")
+    plutarch.register("kchestnov",game_date)
+
+    reply = f"Successfully registered on {game_date}!"
+    await query.edit_message_text(
+        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
+    )
+    return END_ROUTES
 
 async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons"""
@@ -135,15 +160,22 @@ async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
         InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
     ]
-]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    participants = ["Kostya", "Nastya"]
+    game_date = next_sunday().strftime("%Y-%m-%d")
+    participants = plutarch.list_participants(game_date)
+    reply = "---\n"
+    if participants:
+       for r in participants:
+            reply += f"{r.game_date} - {r.user_name} - {r.prio} - {r.requested_at}\n"
+    else:
+       reply = "No user registerer or there is no game this Sunday"
+    reply += "\n---"  
     await query.edit_message_text(
-        text=f"Current list of participants {participants}. Do you want to start over?", reply_markup=reply_markup
+        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
     )
     return END_ROUTES
-
 
 async def yield_the_arena(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons. This is the end point of the conversation."""
@@ -191,7 +223,6 @@ async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.edit_message_text(text="See you next time!")
     return ConversationHandler.END
 
-
 def main() -> None:
     """Run the bot."""
     # Create the Application and pass it your bot's token.
@@ -230,7 +261,6 @@ def main() -> None:
 
     # Run the bot until the user presses Ctrl-C
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()

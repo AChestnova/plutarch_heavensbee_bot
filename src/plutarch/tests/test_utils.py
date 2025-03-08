@@ -1,5 +1,5 @@
 import unittest
-from plutarch.helpers.spreadsheet_helper import SpreadsheetHelper
+from plutarch.helpers import SpreadsheetHelper
 
 class TestCalculateExpiry(unittest.TestCase):
     """Test class """
