@@ -28,7 +28,9 @@ class Registration:
 
 @dataclass
 class AvailableSlot:
+    game_date: datetime.date
+    seller_user_name: str
+    tikkie_link: str
     requested_at: int
-    game_date: time
-    user_name: str
-    prio: int
+    is_sent: Optional[bool] = False
+    buyer_user_name: Optional[str] = None
