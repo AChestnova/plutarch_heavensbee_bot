@@ -1,6 +1,4 @@
-"""
-Set of functions to manipulate Goodgle spreadsheet
-"""
+
 import time
 import datetime
 from dataclasses import dataclass
@@ -34,15 +32,3 @@ class AvailableSlot:
     game_date: time
     user_name: str
     prio: int
-    
-class SpreadsheetHelper:
-    """Set of functions to manipulate Goodgle spreadsheet"""
-    @staticmethod
-    def check_tests(message: str) -> str:
-        """
-        Check if a tests are working
-        
-        :param message: Any string
-        :return: str Same as input
-        """
-        return message

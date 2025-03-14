@@ -17,8 +17,8 @@ Press Ctrl-C on the command line to stop the bot.
 
 import logging
 
-from .plutarch import Plutarch
-from .helpers.date_helpers import next_sunday, sunday_in_two_weeks
+from plutarch import Plutarch
+from helpers import next_sunday, sunday_in_two_weeks
 from dynaconf import Dynaconf
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -72,6 +72,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     # Tell ConversationHandler that we're in state `FIRST` now
     return START_ROUTES
 
+
+async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Returns `ConversationHandler.END`, which tells the
+    ConversationHandler that the conversation is over.
+    """
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text="See you next time!")
+    return ConversationHandler.END
+
+
 async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Prompt same text & keyboard as `start` does but not as new message"""
     # Get CallbackQuery from Update
@@ -91,6 +102,7 @@ async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.edit_message_text(text="Of course! What else?", reply_markup=reply_markup)
     return START_ROUTES
 
+
 async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons"""
     query = update.callback_query
@@ -106,6 +118,7 @@ async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text=f"Which week you'd like to play?", reply_markup=reply_markup
     )
     return HELPERS
+
 
 async def join_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons. This is the end point of the conversation."""
@@ -129,6 +142,7 @@ async def join_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     return END_ROUTES
 
+
 async def join_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons. This is the end point of the conversation."""
     query = update.callback_query
@@ -150,6 +164,47 @@ async def join_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         text=reply+"\nDo you want to start over?", reply_markup=reply_markup
     )
     return END_ROUTES
+
+
+async def sell_slot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show new choice of buttons. This is the end point of the conversation."""
+    query = update.callback_query
+    await query.answer()
+    keyboard = [
+        [
+            InlineKeyboardButton("This week", callback_data=str(THREE)),
+            InlineKeyboardButton("Next week", callback_data=str(FOUR)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text(
+        text="Which week you'd like to yield?", reply_markup=reply_markup
+    )
+    # Transfer to conversation state `SECOND`
+    return HELPERS
+
+
+async def sell_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show new choice of buttons. This is the end point of the conversation."""
+    query = update.callback_query
+    await query.answer()
+
+    game_date = "2025-03-08"
+    await query.answer()
+    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
+    return ConversationHandler.END
+
+
+async def sell_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Show new choice of buttons. This is the end point of the conversation."""
+    query = update.callback_query
+    await query.answer()
+
+    game_date = "2025-03-16"
+    await query.answer()
+    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
+    return ConversationHandler.END
+
 
 async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons"""
@@ -177,51 +232,6 @@ async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     return END_ROUTES
 
-async def yield_the_arena(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
-    query = update.callback_query
-    await query.answer()
-    keyboard = [
-        [
-            InlineKeyboardButton("This week", callback_data=str(THREE)),
-            InlineKeyboardButton("Next week", callback_data=str(FOUR)),
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(
-        text="Which week you'd like to yield?", reply_markup=reply_markup
-    )
-    # Transfer to conversation state `SECOND`
-    return HELPERS
-
-async def sell_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
-    query = update.callback_query
-    await query.answer()
-
-    game_date = "2025-03-08"
-    await query.answer()
-    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
-    return ConversationHandler.END
-
-async def sell_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
-    query = update.callback_query
-    await query.answer()
-
-    game_date = "2025-03-16"
-    await query.answer()
-    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
-    return ConversationHandler.END
-
-async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Returns `ConversationHandler.END`, which tells the
-    ConversationHandler that the conversation is over.
-    """
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text(text="See you next time!")
-    return ConversationHandler.END
 
 def main() -> None:
     """Run the bot."""
@@ -239,7 +249,7 @@ def main() -> None:
         states={
             START_ROUTES: [
                 CallbackQueryHandler(join_the_games, pattern="^" + str(ONE) + "$"),
-                CallbackQueryHandler(yield_the_arena, pattern="^" + str(TWO) + "$"),
+                CallbackQueryHandler(sell_slot, pattern="^" + str(TWO) + "$"),
                 CallbackQueryHandler(see_the_roster, pattern="^" + str(THREE) + "$"),
             ],
             END_ROUTES: [

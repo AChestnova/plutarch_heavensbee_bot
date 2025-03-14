@@ -2,16 +2,15 @@
 # Constants
 VENV_DIR ?= .venv
 REQUIREMENTS_FILE = requirements.txt
-PYTHON_MODULE = plutarch
 TEST_DIR = tests
 
 # Define paths and variables
 PYTHON ?= python3
 PIP ?= $(VENV_DIR)/bin/pip
-SETTINGS_FILE ?= settings.toml
+SETTINGS_FILE ?= ../config/settings.toml
 
 # Default target to run the program
-all: setup test run  ## Run setup, tests, and execute the program (default)
+all: setup run  ## Run setup, tests, and execute the program (default)
 
 # Display available commands
 
@@ -36,8 +35,8 @@ install-deps:  ## Install dependencies from requirements.txt
 
 .PHONY: run
 run:  ## Run the Python program with configurable settings file
-	@echo "Running the Python program: $(PYTHON_MODULE)"
-	@SETTINGS_FILE_FOR_DYNACONF='["$(SETTINGS_FILE)"]' $(VENV_DIR)/bin/python -m $(PYTHON_MODULE)
+	@echo "Running the program"
+	@SETTINGS_FILE_FOR_DYNACONF='["$(SETTINGS_FILE)"]' $(VENV_DIR)/bin/python main.py
 
 .PHONY: test
 test:  ## Run unit tests in $(TEST_DIR)

@@ -1,5 +1,5 @@
 import logging
-from .spreadsheet_helper import Player, Game, Registration, AvailableSlot
+from models import Player, Game, Registration, AvailableSlot
 
 class Database():
 
@@ -99,7 +99,7 @@ class Database():
     def read_table(self, table: str, filter: str) -> list[Player]|list[Game]|list[Registration]|list[AvailableSlot]:
         match table:
             case "players":
-                return self.filter(self.players, filter)
+                return self.spreadsheet_helper.read_table(table)
             case "games":
                 return self.filter(self.games, filter)
             case "registrations":

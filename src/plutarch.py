@@ -1,8 +1,8 @@
 import logging
 import time
 from dataclasses import dataclass
-from ..helpers.spreadsheet_helper import Player, Game, Registration, AvailableSlot
-from ..helpers.database_helper import Database
+from models import Player, Game, Registration, AvailableSlot
+from database import Database
 
 REGISTRATION_DEADLINE = 24 # Hours
 

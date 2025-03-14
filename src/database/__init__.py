@@ -1,4 +1,4 @@
 """
 Collection of helper functions
 """
-from .plutarch import Plutarch
+from .database import Database
