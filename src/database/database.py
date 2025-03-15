@@ -149,4 +149,5 @@ class Database():
                 del self.registrations[k]
             case AvailableSlot():
                 k = data.game_date + "_" + data.seller_user_name
-                del self.auction[k] 
+                del self.auction[k]
+                self.l.info(f"Slot {k} removed. Current list {self.auction}") 

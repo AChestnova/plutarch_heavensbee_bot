@@ -37,7 +37,9 @@ class Plutarch():
              self.l.info(f"Cannot register: Incorrect game date")
              return reason, False
 
-        # TODO: Remove user from auction if it sells the ticket
+        # Remove user from auction if it sells the ticket
+        self.db.delete(AvailableSlot(game_date=game_date, seller_user_name=user_name, tikkie_link="",requested_at=0,is_sent=False, buyer_user_name=""))
+
         # TODO: Check current capacity, if already full:
         #           Check current time.
         #           Kick low prio to waiting list if we have time.
