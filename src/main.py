@@ -56,7 +56,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Send message on `/start`."""
     # Get user that sent /start and log his name
     user = update.message.from_user
-    logger.info("User started the conversation. ID: %s, FIRST: %s, LAST: %s", user.id, user.first_name, user.last_name)
+    context.bot_data["user_id"] = user.name
+    logger.info("User started the conversation. ID: %s, FIRST: %s, LAST: %s, NAME: %s", user.id, user.first_name, user.last_name, user.name)
     # Build InlineKeyboard where each button has a displayed text
     # and a string as callback_data
     # The keyboard is a list of button rows, where each row is in turn
@@ -126,17 +127,22 @@ async def join_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await query.answer()
 
     keyboard = [
-    [
-        InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
-        InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
-    ]
+        [
+            InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
+            InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     game_date = next_sunday().strftime("%Y-%m-%d")
-    plutarch.register("kchestnov", game_date)
+    user_id = context.bot_data["user_id"]
 
-    reply = f"Successfully registered on {game_date}!"
+    reason, success = plutarch.register(user_id, game_date)
+    if success:
+        reply = f"Successfully registered on {game_date}!"
+    else:
+        reply = f"Cannot registered on {game_date}. {reason}"
+
     await query.edit_message_text(
         text=reply+"\nDo you want to start over?", reply_markup=reply_markup
     )
@@ -157,9 +163,14 @@ async def join_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     game_date = sunday_in_two_weeks().strftime("%Y-%m-%d")
-    plutarch.register("kchestnov",game_date)
+    user_id = context.bot_data["user_id"]
 
-    reply = f"Successfully registered on {game_date}!"
+    reason, success = plutarch.register(user_id, game_date)
+    if success:
+        reply = f"Successfully registered on {game_date}!"
+    else:
+        reply = f"Cannot registered on {game_date}. {reason}"
+
     await query.edit_message_text(
         text=reply+"\nDo you want to start over?", reply_markup=reply_markup
     )
@@ -170,6 +181,7 @@ async def sell_slot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons. This is the end point of the conversation."""
     query = update.callback_query
     await query.answer()
+
     keyboard = [
         [
             InlineKeyboardButton("This week", callback_data=str(THREE)),
@@ -177,6 +189,7 @@ async def sell_slot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
     await query.edit_message_text(
         text="Which week you'd like to yield?", reply_markup=reply_markup
     )
@@ -189,10 +202,31 @@ async def sell_this_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
 
-    game_date = "2025-03-08"
-    await query.answer()
-    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
-    return ConversationHandler.END
+    keyboard = [
+        [
+            InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
+            InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    user_id = context.bot_data["user_id"]
+    game_date = next_sunday().strftime("%Y-%m-%d")
+
+
+    unergistered, sold = plutarch.leave_game(user_id, game_date, "https://payme")
+    if unergistered:
+        reply = f"Unregistered from {game_date}"
+        if sold:
+            reply += " and  added your slot to auction!"
+    else:
+        reply = f"Looks like you were not registered on {game_date}. Nothing to do!"
+
+    await query.edit_message_text(
+        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
+    )
+
+    return END_ROUTES
 
 
 async def sell_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -200,10 +234,31 @@ async def sell_next_week(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
     await query.answer()
 
-    game_date = "2025-03-16"
-    await query.answer()
-    await query.edit_message_text(text=f"Added slot {game_date} to auction! See you next time!")
-    return ConversationHandler.END
+    keyboard = [
+        [
+            InlineKeyboardButton("Yes, let's do it again!", callback_data=str(ONE)),
+            InlineKeyboardButton("Nah, I've had enough ...", callback_data=str(TWO)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    user_id = context.bot_data["user_id"]
+    game_date = sunday_in_two_weeks().strftime("%Y-%m-%d")
+
+
+    unergistered, sold = plutarch.leave_game(user_id, game_date, "https://payme")
+    if unergistered:
+        reply = f"Unregistered from {game_date}"
+        if sold:
+            reply += " and added your slot to auction!"
+    else:
+        reply = f"Looks like you were not registered on {game_date}. Nothing to do!"
+
+    await query.edit_message_text(
+        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
+    )
+
+    return END_ROUTES
 
 
 async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:

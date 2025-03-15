@@ -4,13 +4,21 @@ import datetime
 from dataclasses import dataclass
 from typing import Optional
 
+from enum import Enum
+
+# class syntax
+class Prio(Enum):
+    FULL = 1
+    HALF = 2
+    ONETIME = 3
+
 @dataclass
 class Player:
     user_name: str
     name: Optional[str] = ""
     balance: Optional[int] = 0
     can_sell: Optional[bool] = False
-    prio: Optional[int] = 2
+    prio: Optional[int] = Prio.ONETIME
 
 @dataclass
 class Game:

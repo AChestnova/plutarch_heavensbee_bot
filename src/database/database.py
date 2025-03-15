@@ -1,6 +1,7 @@
 import logging
-from models import Player, Game, Registration, AvailableSlot
-
+from models import Player, Game, Registration, AvailableSlot, Prio
+#import gs
+from helpers import next_sunday, sunday_in_two_weeks
 class Database():
 
     def __init__(self):
@@ -14,16 +15,25 @@ class Database():
 
     def __fill_tables(self):
 
-        for i in ["kchestnov", "achestnova"]:
-            p = Player(
-                user_name=i,
-                name=i,
-                balance=0,
-                can_sell=False,
-                prio=2,
-            )
-            self.players[p.name] = p
-        for d in ["2025-03-09", "2025-03-15","2025-03-22","2025-03-29"]:
+        p = Player(
+            user_name="@kchestnov",
+            name="Konstantin Chestnov",
+            balance=0,
+            can_sell=False,
+            prio=Prio.FULL,
+        )
+        self.players[p.user_name] = p
+
+        p = Player(
+            user_name="@AChestnova",
+            name="Anastasiia Chestnova",
+            balance=0,
+            can_sell=False,
+            prio=Prio.HALF,
+        )
+        self.players[p.user_name] = p
+
+        for d in [next_sunday().strftime("%Y-%m-%d"), sunday_in_two_weeks().strftime("%Y-%m-%d")]:
             g = Game(
                 game_date=d,
                 cap=14,
@@ -32,11 +42,11 @@ class Database():
             )
             self.games[d] = g
 
-        for d in ["2025-03-09"]:
+        for d in [next_sunday().strftime("%Y-%m-%d")]:
             r = Registration(
                 requested_at=12233445,
                 game_date=d,
-                user_name="achestnova",
+                user_name="@Incognito",
                 prio=2
             )
             self.registrations[d] = r
@@ -52,7 +62,7 @@ class Database():
                 k = data.game_date + "_" + data.user_name
                 return k in self.registrations
             case AvailableSlot():
-                k = data.game_date + "_" + data.user_name
+                k = data.game_date + "_" + data.seller_user_name
                 return k in self.auction
      
     def create(self, data):
@@ -69,7 +79,7 @@ class Database():
                 k = data.game_date + "_" + data.user_name
                 self.registrations[k] = data
             case AvailableSlot():
-                k = data.game_date + "_" + data.user_name
+                k = data.game_date + "_" + data.seller_user_name
                 self.auction[k] = data
     
     def read(self, data) -> Player|Game|Registration|AvailableSlot:
@@ -86,7 +96,7 @@ class Database():
                 k = data.game_date + "_" + data.user_name
                 return self.registrations[k]
             case AvailableSlot():
-                k = data.game_date + "_" + data.user_name
+                k = data.game_date + "_" + data.seller_user_name
                 return self.auction[k]
 
     def filter(self, d: dict, f: str) -> list[Player]|list[Game]|list[Registration]|list[AvailableSlot]:
@@ -121,7 +131,7 @@ class Database():
                 k = data.game_date + "_" + data.user_name
                 self.registrations[k] = data
             case AvailableSlot():
-                k = data.game_date + "_" + data.user_name
+                k = data.game_date + "_" + data.seller_user_name
                 self.auction[k] = data 
     
     def delete(self, data):
@@ -138,5 +148,5 @@ class Database():
                 k = data.game_date + "_" + data.user_name
                 del self.registrations[k]
             case AvailableSlot():
-                k = data.game_date + "_" + data.user_name
+                k = data.game_date + "_" + data.seller_user_name
                 del self.auction[k] 
