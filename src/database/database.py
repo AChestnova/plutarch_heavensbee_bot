@@ -1,5 +1,5 @@
 import logging
-import gs
+from database.gs import *
 from models import Player, Game, Registration, AvailableSlot
 
 class Database():
@@ -55,26 +55,23 @@ class Database():
 
     def read(self, data) -> Player|Game|Registration|AvailableSlot|None:
         
-        if not self.exists(data):
-            return None
-
         try:
             match data:
                 case Player():
                     raw_data = gs.read_by_value(sheet_name="players", search_value=data.user_name)[0]
                     return Player(
                         user_name=raw_data[0],
-                        name=raw_data[1], 
+                        name=raw_data[1],
                         balance=raw_data[2],
                         can_sell=raw_data[3],
-                        prio=raw_data[4],
-                    )
+                        prio=raw_data[4]
+                    )                       
 
                 case Game():
                     raw_data = gs.read_by_value(sheet_name="games", search_value=data.game_date)[0]
                     return Game(
                         game_date=raw_data[0],
-                        cap=raw_data[1], 
+                        cap=raw_data[1],
                         price=raw_data[2],
                         is_summarized=raw_data[3],
                     )
@@ -82,9 +79,9 @@ class Database():
                 case Registration():
                     raw_data = gs.read_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)[0]
                     return Registration(
-                        requested_at=raw_data[0],
-                        game_date=raw_data[1],
-                        user_name=raw_data[2],
+                        game_date=raw_data[0],
+                        user_name=raw_data[1],
+                        requested_at=raw_data[2],
                         prio=raw_data[3],
                     )
 
@@ -93,30 +90,64 @@ class Database():
                     return AvailableSlot(
                         game_date=raw_data[0],
                         seller_user_name=raw_data[1],
-                        tikkie_link=raw_data[2],
-                        requested_at=raw_data[3],
+                        requested_at=raw_data[2],
+                        tikkie_link=raw_data[3],
                         is_sent=raw_data[4],
                         buyer_user_name=raw_data[5],
                     )
+            
         except:
             return None
-
+        
 
     def read_table(self, table: str, filter: str) -> list[Player]|list[Game]|list[Registration]|list[AvailableSlot]:
-        """Reads the given sheet and returns a list of objects of the corresponding type. If filter is provided, """
+        """Reads the given sheet and returns a list of objects of the corresponding type. If filter is provided, the rows are filtered"""
+        
+        result = []
         try:
+            raw_data = gs.read_by_value(sheet_name=table, search_value=filter)
             match table:
                 case "players":
-                    return self.spreadsheet_helper.read_table(table)
+                    for row in range(len(raw_data)):
+                        result.append(Player(
+                            user_name=raw_data[0],
+                            name=raw_data[1], 
+                            balance=raw_data[2],
+                            can_sell=raw_data[3],
+                            prio=raw_data[4],
+                        ))
+
                 case "games":
-                    return self.filter(self.games, filter)
-                case "registrations":
-                    return self.filter(self.registrations, filter)
-                case "auction":
-                    return self.filter(self.auction, filter)
-        
+                    for row in range(len(raw_data)):
+                        result.append(Game(
+                            game_date=raw_data[0],
+                            cap=raw_data[1], 
+                            price=raw_data[2],
+                            is_summarized=raw_data[3],
+                    ))
+
+                case Registration():
+                    for row in range(len(raw_data)):
+                        result.append(Registration(
+                            requested_at=raw_data[0],
+                            game_date=raw_data[1],
+                            user_name=raw_data[2],
+                            prio=raw_data[3],
+                    ))
+
+                case AvailableSlot():
+                    for row in range(len(raw_data)):
+                        result.append(AvailableSlot(
+                            game_date=raw_data[0],
+                            seller_user_name=raw_data[1],
+                            tikkie_link=raw_data[2],
+                            requested_at=raw_data[3],
+                            is_sent=raw_data[4],
+                            buyer_user_name=raw_data[5],
+                    ))
         except:
             return None
+        return result
 
 
     def update(self, data):
