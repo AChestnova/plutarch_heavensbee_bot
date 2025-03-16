@@ -1,10 +1,9 @@
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-
 from dynaconf import Dynaconf
 
 
-def number_to_column(n):
+def column_number_to_excel_column_name(n):
     """Returns an Excel-like column name by its order number (e.g. 1 -> A, 27 -> AA)"""
 
     result = ""
@@ -26,10 +25,12 @@ def authenticate_to_gs():
     return spreadsheets
 
 
-def read_sheet(spreadsheets, sheet_name, columns_number=5):
+def read_sheet(sheet_name, columns_number=5):
     """Function to read data from a sheet"""
 
-    last_column = number_to_column(columns_number)
+    spreadsheets = authenticate_to_gs()
+
+    last_column = column_number_to_excel_column_name(columns_number)
     result = (
         spreadsheets.values()
         .get(
@@ -42,24 +43,33 @@ def read_sheet(spreadsheets, sheet_name, columns_number=5):
     return values
 
 
-def find_row_index(spreadsheets, sheet_name, search_value):
-    """Finds the index of a first row containing search_value in a specified sheet"""
+def find_row_index(sheet_name, search_value, search_value_2=None):
+    """Finds the index of a first row containing search_value in a specified sheet.
+    If search_value_2 is given, checks if that value is also in the row"""
 
-    values = read_sheet(spreadsheets, sheet_name)
+    spreadsheets = authenticate_to_gs()
+    values = read_sheet(sheet_name)
 
     for i, row in enumerate(values, start=1):  # Google Sheets uses 1-based indexing
         if search_value in row:
-            return i  # Return the row index
-
+            if not search_value_2:
+                # if we need to find only one value, return row immediately
+                return i 
+            if search_value_2 in row:
+                # otherwise, return only the index for row with both values:
+                return i
+            
     return None  # Value not found
 
 
-def write_to_sheet(spreadsheets, sheet_name, new_data):
+def write_to_sheet(sheet_name, new_data):
     """Function to append a row to the sheet"""
 
     assert isinstance(new_data, list), "New data must be a list of values"
 
-    last_column = number_to_column(len(new_data))
+    spreadsheets = authenticate_to_gs()
+
+    last_column = column_number_to_excel_column_name(len(new_data))
 
     request = spreadsheets.values().append(
         spreadsheetId=settings.google.spreadsheet_id,
@@ -67,17 +77,40 @@ def write_to_sheet(spreadsheets, sheet_name, new_data):
         valueInputOption="RAW",
         body={"values": [new_data]},
     )
-    request.execute()
-    print("Values added successfully")
+    result = request.execute()
+    if not result.get("updates", None):
+        return False # unsuccessful
+    return True
 
 
-def delete_row_by_value(spreadsheets, sheet_name, search_value):
-    """Searches for a row containing search_value in sheet_name and deletes the first one found"""
+def read_by_value(sheet_name, search_value, search_value_2=None):
+    """Returns all the rows containing search_value and search_value_2 (if given) 
+    in the specified sheet"""
 
-    row_number = find_row_index(spreadsheets, sheet_name, search_value)
+    values = read_sheet(sheet_name)
+
+    result = []
+    for row in values:
+        if search_value in row:
+            if not search_value_2 or search_value_2 in row:
+                # if we need to find only one value, add the row to the result immediately
+                # otherwise, return only the row with both values
+                result.append(row)
+        
+    return None  # Value not found
+
+
+
+def delete_row_by_value(sheet_name, search_value, search_value_2=None):
+    """Searches for a row containing search_value (or both search_value and search_value_2 if provided) 
+    in sheet_name and deletes the first one found"""
+
+    spreadsheets = authenticate_to_gs()
+    row_number = find_row_index(sheet_name, search_value, search_value_2)
 
     if row_number is None:
         print(f"No row found with '{search_value}' in {sheet_name}.")
+        return False
 
     request = spreadsheets.batchUpdate(
         spreadsheetId=settings.google.spreadsheet_id,
@@ -96,21 +129,26 @@ def delete_row_by_value(spreadsheets, sheet_name, search_value):
             ]
         },
     )
-    request.execute()
-    print(f"Row {row_number} containing '{search_value}' deleted from {sheet_name}")
+    result = request.execute()
+    print(f"{result=}")
+    if not result:
+         return False # unsuccessful
+    return True
 
 
-def update_row_by_value(spreadsheets, sheet_name, search_value, new_data):
+def update_row_by_value(sheet_name, search_value, search_value_2, new_data):
     """Searches for a row containing search_value in sheet_name and updates the first one found with new_data"""
+
+    spreadsheets = authenticate_to_gs()
 
     assert isinstance(new_data, list), "New data must be a list of values"
 
-    row_number = find_row_index(spreadsheets, sheet_name, search_value)
+    row_number = find_row_index(spreadsheets, sheet_name, search_value, search_value_2)
 
     if row_number is None:
-        return f"No row found with '{search_value}' in {sheet_name}."
+        return f"No row found with '{search_value}', '{search_value_2}' in {sheet_name}."
 
-    last_column = number_to_column(len(new_data))
+    last_column = column_number_to_excel_column_name(len(new_data))
 
     request = spreadsheets.values().update(
         spreadsheetId=settings.google.spreadsheet_id,
@@ -122,12 +160,13 @@ def update_row_by_value(spreadsheets, sheet_name, search_value, new_data):
 
     print(f"Row {row_number} updated in {sheet_name}.")
 
+
 if __name__ == "__main__":
 
 
     settings = Dynaconf(
         envvar_prefix="PLUTARCH",
-        settings_file="settings.toml",
+        settings_file="config/settings.toml",
         sysenv_fallback=True,
     )
 
@@ -140,11 +179,11 @@ if __name__ == "__main__":
 
 
     # Test reading and writing
-    spreadsheets = authenticate_to_gs()
-    print("Current Players:", read_sheet(spreadsheets, "players"))
-    # write_to_sheet(spreadsheets, "players", ["test", "Petya Petrov", 10])
-    # delete_row_by_value(spreadsheets, "players", "test")
-    update_row_by_value(
-        spreadsheets, "players", "@Achestnova", ["@Achestnova", "Anastasiia Chestnova", 65]
-    )
-    print("Updated Players:", read_sheet(spreadsheets, "players"))
+    
+    #print("Current Players:", read_sheet("players"))
+    #write_to_sheet("auctions", ["2024-12-01", "@test_user", "link", 12334, None])
+    #delete_row_by_value("players", "Petya Petrov")
+    # update_row_by_value(
+    #     "players", "@Achestnova", ["@Achestnova", "Anastasiia Chestnova", 65]
+    # )
+    # print("Updated Players:", read_sheet("players"))
