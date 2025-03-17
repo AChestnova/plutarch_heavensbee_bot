@@ -59,15 +59,30 @@ class Plutarch():
         if reason:
             self.log.info(f"register: cannot register: {reason}")
             return False, "try again later"
-        
-        # TODO: Fetch participants and prioritize them
-        # TODO: Check current capacity, if already full:
-        #           Check current time.
-        #           Kick low prio to waiting list if we have time (un-register)
-        #           Reject request if too late
-        # TODO: Inform unregistered people
-        self.log.info(f"Registered {registration.user_name} for a game on {registration.game_date}")
         return True, ""
+        # # Here we need to make sure high-prioriy members have a slot
+        # # Fetch participants and prioritize them
+        # registrations, reason = self.list_participants(game_date)
+        # if reason:
+        #     self.log.info(f"register: cannot validate current list of users: {reason}")
+        #     return False, "try again later"
+                    
+        # registrations.sort(key=lambda x: (x.prio, x.requested_at))
+        # # Check current capacity, if already full:
+        # victim_name = ""
+        # if len(registrations) > game.cap:
+        #     # TODO: Check current time.
+        #     # Reject request if too late - call unregister
+        #     victim = registrations.pop()
+        #     victim_name = victim.user_name
+        #     self.leave_game(victim_name, game_date)
+        #     # Kick low prio to waiting list if we have time (un-register)
+        #     self.log.info(f"Un-registered {victim.user_name} for a game on {registration.game_date}")
+        # if user_name == victim_name:
+        #     return False, "already full"
+        
+        # # TODO: Inform unregistered people
+        # return True, ""
         
     
     def list_participants(self, game_date: str) -> tuple[list[Registration], str]:
@@ -83,7 +98,7 @@ class Plutarch():
         if reason:
             self.log.info(f"list_participants: cannot read registrations: {reason}")
             return [], "try again later"
-        
+        registrations.sort(key=lambda x: (x.prio, x.requested_at)), ""
         return registrations, ""
 
 

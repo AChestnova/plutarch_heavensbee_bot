@@ -19,6 +19,7 @@ import logging
 from plutarch import Plutarch
 from helpers import get_this_sunday, get_next_sunday
 from dynaconf import Dynaconf
+from datetime import datetime 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -202,36 +203,64 @@ async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    priorities = [
+        "", "full","half","one-time"
+    ]
     this_sunday = get_this_sunday().strftime("%Y-%m-%d")
-    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
-
     participants_this_sunday, reason = plutarch.list_participants(this_sunday)
     if reason:
         reply = "Something went wrong, {reason}"
         await query.edit_message_text(text=reply)
         return ConversationHandler.END
+    for i, player in enumerate(participants_this_sunday):
+        date = datetime.fromtimestamp(int(player.requested_at))
+        formatted_date = date.strftime('%y-%m-%d %H:%M')
+        participants_this_sunday[i] = f"{player.user_name} ({priorities[int(player.prio)]}) at {formatted_date}"
+
+    reply = []
+    reply.append(f"{this_sunday}")
     
+    # Trying to split participants between current and waiting list
+    main_section = participants_this_sunday[:14]
+    waiting_section = participants_this_sunday[14:]
+    
+    reply.extend(main_section)
+    
+    if waiting_section:
+        reply.append("--- waiting list ---")
+        reply.extend(waiting_section)
+    
+    reply.append("---")
+    
+    # Another day, same logic
+    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
     participants_next_sunday, reason = plutarch.list_participants(next_sunday)
     if reason:
         reply = "Something went wrong, {reason}"
         await query.edit_message_text(text=reply)
         return ConversationHandler.END
- 
-    reply = f"*{this_sunday}*\n"
-    if not participants_this_sunday:
-        reply += f"No one is registered\n" 
-    for r in participants_this_sunday:
-            reply += f"{r.user_name} registered at {r.requested_at} with priority {r.prio}\n"
-    
-    reply += f"\n*{next_sunday}*\n"
-    if not participants_next_sunday:
-        reply += f"No one is registered\n" 
-    for r in participants_next_sunday:
-            reply += f"{r.user_name} registered at {r.requested_at} with priority {r.prio}\n"
-    reply += "\n---\n" 
+    for i, player in enumerate(participants_next_sunday):
+        date = datetime.fromtimestamp(int(player.requested_at))
+        formatted_date = date.strftime('%y-%m-%d %H:%M')
+        participants_next_sunday[i] = f"{player.user_name} ({priorities[int(player.prio)]}) at {formatted_date}"
 
+    reply.append(f"{next_sunday}")
+    
+    main_section = participants_next_sunday[:14]
+    waiting_section = participants_next_sunday[14:]
+    
+    reply.extend(main_section)
+    
+    if waiting_section:
+        reply.append("--- waiting list ---")
+        reply.extend(waiting_section)
+    
+    reply.append("---")
+    reply.append("\nDo you want to start over?")
+
+    text = "\n".join(reply)
     await query.edit_message_text(
-        text=reply+"\nDo you want to start over?", reply_markup=reply_markup
+        text=text, reply_markup=reply_markup
     )
     return END_ROUTES
 
