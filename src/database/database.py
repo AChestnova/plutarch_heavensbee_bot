@@ -1,179 +1,78 @@
 import logging
 import database.gs as gs
-from models import Player, Game, Registration, AvailableSlot
+from models import Storable, Player, Game, Registration, AvailableSlot
 
+
+TABLE_TO_OBJECT_MAP = {
+    Player.sheet_name(): Player,
+    Game.sheet_name(): Game,
+    Registration.sheet_name(): Registration,
+    AvailableSlot.sheet_name(): AvailableSlot
+}
+    
 class Database():
 
     def __init__(self):
        
-        self.l = logging.getLogger("database")
+        self.log = logging.getLogger("database")
 
 
-    def exists(self, data) -> tuple[bool, str]:
+    def exists(self, data: Storable) -> tuple[bool, str]:
 
-        reason = ""
-        match data:
-            case Player():
-                result, reason = gs.find_row_index(sheet_name="players", search_value=data.user_name)
-            case Game():
-                result, reason = gs.find_row_index(sheet_name="games", search_value=data.game_date)
-            case Registration():
-                result, reason = gs.find_row_index(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
-            case AvailableSlot():
-                result, reason = gs.find_row_index(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
-
-        if reason:
-            return False, f"cannot find item: {reason}"
+        value1, value2 = data.unique_keys
+        result, err = gs.find_row_index(sheet_name=data.sheet_name(), search_value=value1, search_value_2=value2)
+        if err:
+            return False, f"cannot find item: {err}"
         
         if not result:
             return False, ""
         return True, ""
 
-    def create(self, data) -> tuple[bool, str]:
+    def create(self, data: Storable) -> tuple[bool, str]:
 
-        exist, reason = self.exists(data)
+        exist, err = self.exists(data)
         if exist:
             return True, ""
         
-        match data:
-            case Player():
-                new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
-                _, reason = gs.write_to_sheet(sheet_name="players", new_data=new_data)
-            case Game():
-                new_data = [data.game_date, data.cap, data.price, data.is_summarized]
-                _, reason = gs.write_to_sheet(sheet_name="games", new_data=new_data)
-            case Registration():
-                new_data = [data.game_date, data.requested_at, data.user_name, data.prio]
-                _, reason = gs.write_to_sheet(sheet_name="registrations", new_data=new_data)
-            case AvailableSlot():
-                new_data = [data.game_date, data.seller_user_name, data.requested_at, data.tikkie_link, data.is_sent, data.buyer_user_name]
-                _, reason = gs.write_to_sheet(sheet_name="auctions", new_data=new_data)
-
-        if reason:
-            return False, f"cannot create item: {reason}"
+        _, err = gs.write_to_sheet(sheet_name=data.sheet_name(), new_data=list(data))
+        if err:
+            return False, f"cannot create item: {err}"
         
-        return True, reason
+        return True, err
      
 
-    def read(self, data) -> tuple[Player|Game|Registration|AvailableSlot|None, str]:
+    def read(self, data: Storable) -> tuple[Storable|None, str]:
+
+        value1, value2 = data.unique_keys
+        raw_data, err = gs.read_by_value(sheet_name=data.sheet_name(), search_value=value1, search_value_2=value2)
+        if err:
+            return None, f"cannot read item: {err}"
+        if not raw_data:
+            return None, ""
         
-        match data:
-            case Player():
-                raw_data, reason = gs.read_by_value(sheet_name="players", search_value=data.user_name)
-                if reason:
-                    return None, f"cannot read item: {reason}"
-                if not raw_data:
-                    return None, ""
-                raw_data = raw_data[0]
-                result = Player(
-                    user_name=raw_data[0],
-                    name=raw_data[1],
-                    balance=raw_data[2],
-                    can_sell=raw_data[3],
-                    prio=int(raw_data[4])
-                )                       
-
-            case Game():
-                raw_data, reason = gs.read_by_value(sheet_name="games", search_value=data.game_date)
-                if reason:
-                    return None, f"cannot read item: {reason}"
-                if not raw_data:
-                    return None, ""
-                raw_data = raw_data[0]
-                result = Game(
-                    game_date=raw_data[0],
-                    cap=raw_data[1],
-                    price=raw_data[2],
-                    is_summarized=raw_data[3],
-                )
-
-            case Registration():
-                raw_data, reason = gs.read_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
-                if reason:
-                    return None, f"cannot read item: {reason}"
-                if not raw_data:
-                    return None, ""
-                raw_data = raw_data[0]
-                result = Registration(
-                    game_date=raw_data[0],
-                    requested_at=raw_data[1],
-                    user_name=raw_data[2],
-                    prio=raw_data[3],
-                )
-
-            case AvailableSlot():
-                raw_data, reason = gs.read_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
-                if reason:
-                    return None, f"cannot read item: {reason}"
-                if not raw_data:
-                    return None, ""
-                raw_data = raw_data[0]
-                result = AvailableSlot(
-                    game_date=raw_data[0],
-                    seller_user_name=raw_data[1],
-                    requested_at=raw_data[2],
-                    tikkie_link=raw_data[3],
-                    is_sent=raw_data[4],
-                    buyer_user_name=raw_data[5],
-                )
+        assert len(raw_data) == 1, "read should return only 1 value"
         
+        storable = TABLE_TO_OBJECT_MAP[data.sheet_name()]
+        result = storable.from_list(raw_data[0])
+
         return result, ""
         
 
-    def read_table(self, table: str, filter: str) -> tuple[list[Player]|list[Game]|list[Registration]|list[AvailableSlot], str]:
+    def read_table(self, table: str, filter: str) -> tuple[list[Storable], str]:
         """Reads the given sheet and returns a list of objects of the corresponding type. If filter is provided, the rows are filtered"""
         
-        result = []
-        raw_data, reason = gs.read_by_value(sheet_name=table, search_value=filter)
-        if reason:
-            return [], f"cannot read table: {reason}"
+        raw_data, err = gs.read_by_value(sheet_name=table, search_value=filter)
+        if err:
+            return [], f"cannot read table: {err}"
         if not raw_data:
             return [], ""
-        match table:
-            case "players":
-                for i in range(len(raw_data)):
-                    row = raw_data[i]
-                    result.append(Player(
-                        user_name=row[0],
-                        name=row[1], 
-                        balance=row[2],
-                        can_sell=row[3],
-                        prio=row[4],
-                    ))
+        
+        storable = TABLE_TO_OBJECT_MAP[table]
 
-            case "games":
-                for i in range(len(raw_data)):
-                    row = raw_data[i]
-                    result.append(Game(
-                        game_date=row[0],
-                        cap=row[1], 
-                        price=row[2],
-                        is_summarized=row[3],
-                ))
-
-            case "registrations":
-                self.l.info(f"read_table: registrations: iterating over {raw_data}")
-                for i in range(len(raw_data)):
-                    row = raw_data[i]
-                    result.append(Registration(
-                        game_date=row[0],
-                        requested_at=row[1],
-                        user_name=row[2],
-                        prio=row[3],
-                ))
-
-            case "auctions":
-                for i in range(len(raw_data)):
-                    row = raw_data[i]
-                    result.append(AvailableSlot(
-                        game_date=row[0],
-                        seller_user_name=row[1],
-                        requested_at=row[2],
-                        tikkie_link=row[3],
-                        is_sent=row[4],
-                        buyer_user_name=row[5],
-                ))
-                    
+        result = []
+        for i in range(len(raw_data)):
+            item = storable.from_list(raw_data[i])
+            result.append(item)
                 
         return result, ""
 
@@ -182,52 +81,33 @@ class Database():
         # TODO: not used yet, adjust to the use case. The current implementation is a bit odd, 
         # since we are updating only metadata and not the key field(s)
 
-        exist, reason = self.exists(data)
-        if reason:
-            return False, f"cannot update item: {reason}"
+        exist, err = self.exists(data)
+        if err:
+            return False, f"cannot update item: {err}"
         if not exist:
-            return False, f"cannot update: {reason}"
+            return False, f"cannot update: {err}"
         
-        match data:
-            case Player():
-                new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
-                _, reason = gs.update_row_by_value(sheet_name="players", search_value=data.user_name, new_data=new_data)
-            case Game():
-                new_data = [data.game_date, data.cap, data.price, data.is_summarized]
-                _, reason= gs.update_row_by_value(sheet_name="games", search_value=data.game_date, new_data=new_data)
-            case Registration():
-                new_data = [data.game_date, data.requested_at, data.user_name, data.prio]
-                _, reason= gs.update_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
-            case AvailableSlot():
-                new_data = [data.game_date, data.seller_user_name, data.requested_at, data.tikkie_link, data.is_sent, data.buyer_user_name]
-                _, reason= gs.update_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
-    
-        if reason:
-            return False, f"cannot update item: {reason}"
+        value1, value2 = data.unique_keys
+        _, err = gs.update_row_by_value(sheet_name=data.sheet_name(), search_value=value1, search_value_2=value2, new_data=list(data))
+     
+        if err:
+            return False, f"cannot update item: {err}"
         
-        return True, reason
+        return True, err
 
 
     def delete(self, data) -> tuple[bool, str]:
 
-        exist, reason = self.exists(data)
-        if reason:
-            return False, f"cannot delete item: {reason}"
+        exist, err = self.exists(data)
+        if err:
+            return False, f"cannot delete item: {err}"
         if not exist:
             return True, ""
         
-        result = False
-        match data:
-            case Player():
-                _, reason = gs.delete_row_by_value(sheet_name="players", search_value=data.user_name)
-            case Game():
-                _, reason = gs.delete_row_by_value(sheet_name="games", search_value=data.game_date)
-            case Registration():
-                _, reason = gs.delete_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
-            case AvailableSlot():
-                _, reason = gs.delete_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
+        value1, value2 = data.unique_keys
+        _, err = gs.delete_row_by_value(sheet_name=data.sheet_name(), search_value=value1, search_value_2=value2)
         
-        if reason:
-            return False, f"cannot delete item: {reason}"
+        if err:
+            return False, f"cannot delete item: {err}"
         
-        return True, reason
+        return True, err

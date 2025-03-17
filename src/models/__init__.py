@@ -1,1 +1,1 @@
-from .models import Player, Game, Registration, AvailableSlot, Prio
+from .models import Storable, Player, Game, Registration, AvailableSlot, Priorities

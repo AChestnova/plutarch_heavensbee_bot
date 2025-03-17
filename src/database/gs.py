@@ -1,8 +1,8 @@
+import logging
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from dynaconf import Dynaconf
-import logging
-
+from functools import lru_cache
 
 GS_SETTINGS = Dynaconf(
     envvar_prefix="PLUTARCH",
@@ -29,6 +29,7 @@ def column_number_to_excel_column_name(n):
         n //= 26
     return result
 
+@lru_cache(maxsize=1)
 def authenticate_to_gs():
     """Authenticate with Google Sheets API"""
 
@@ -71,9 +72,9 @@ def find_row_index(sheet_name, search_value, search_value_2=None) -> tuple[int|N
     If search_value_2 is given, checks if that value is also in the row"""
 
     log.info(f"find_row_index: reading from {sheet_name} {search_value} {search_value_2}")
-    values, reason = read_sheet(sheet_name)
-    if reason:
-        return None, f"cannot find index from {sheet_name}: {reason}"
+    values, err = read_sheet(sheet_name)
+    if err:
+        return None, f"cannot find index from {sheet_name}: {err}"
 
     for i, row in enumerate(values, start=1):  # Google Sheets uses 1-based indexing
         if search_value in row:
@@ -115,9 +116,9 @@ def read_by_value(sheet_name, search_value, search_value_2=None) -> tuple[list, 
     in the specified sheet"""
 
     log.info(f"read_by_value: reading from {sheet_name} {search_value} {search_value_2}")
-    values, reason = read_sheet(sheet_name)
-    if reason:
-        return [], f"cannot read value from {sheet_name}: {reason}"
+    values, err = read_sheet(sheet_name)
+    if err:
+        return [], f"cannot read value from {sheet_name}: {err}"
 
     result = []
     log.info(f"read_by_value: result from {sheet_name} before filtering by {search_value} {search_value_2}: {values}")
@@ -145,10 +146,10 @@ def delete_row_by_value(sheet_name, search_value, search_value_2=None) -> tuple[
     """Searches for a row containing search_value (or both search_value and search_value_2 if provided) 
     in sheet_name and deletes the first one found"""
 
-    row_number, reason = find_row_index(sheet_name, search_value, search_value_2)
+    row_number, err = find_row_index(sheet_name, search_value, search_value_2)
     log.info(f"delete_row_by_value: deleting from {sheet_name} {row_number}")
-    if reason:
-        return False, f"cannot delete row from {sheet_name}: {reason}"
+    if err:
+        return False, f"cannot delete row from {sheet_name}: {err}"
     
     if not row_number:
         return False, f"cannot delete row from {sheet_name}: no row found"
@@ -186,10 +187,10 @@ def update_row_by_value(sheet_name, search_value, search_value_2, new_data) -> t
     """Searches for a row containing search_value in sheet_name and updates the first one found with new_data"""
 
     last_column = column_number_to_excel_column_name(len(new_data))
-    row_number, reason = find_row_index(spreadsheets, sheet_name, search_value, search_value_2)
+    row_number, err = find_row_index(spreadsheets, sheet_name, search_value, search_value_2)
     log.info(f"update_row_by_value: updating {sheet_name} {row_number}")
-    if reason:
-        return False, f"cannot update row in {sheet_name}: {reason}"
+    if err:
+        return False, f"cannot update row in {sheet_name}: {err}"
     
     if not row_number:
         return False, f"cannot update row in {sheet_name}: no row found"
