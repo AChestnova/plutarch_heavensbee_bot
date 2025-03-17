@@ -1,8 +1,5 @@
 
-import time
-import datetime
 from dataclasses import dataclass
-from typing import Optional
 
 from enum import Enum
 
@@ -15,30 +12,30 @@ class Prio(Enum):
 @dataclass
 class Player:
     user_name: str
-    name: Optional[str]
-    balance: Optional[int] = 0
-    can_sell: Optional[bool] = False
-    prio: Optional[int] = Prio.ONETIME
+    name: str|None = None 
+    balance: int|None = None
+    can_sell: bool|None = None
+    prio: int|None = None
 
 @dataclass
 class Game:
     game_date: str
-    cap: Optional[int]
-    price: Optional[int]
-    is_summarized: Optional[bool] = False
+    cap: int|None = None
+    price: int|None = None
+    is_summarized: bool|None = None
 
 @dataclass
 class Registration:
     game_date: str
     user_name: str
-    requested_at: Optional[int] 
-    prio: Optional[int]
+    requested_at: int|None = None
+    prio: int|None = None
 
 @dataclass
 class AvailableSlot:
     game_date: str
     seller_user_name: str
-    requested_at: Optional[int]
-    tikkie_link: Optional[str]
-    is_sent: Optional[bool]
-    buyer_user_name: Optional[str]
+    requested_at: int|None = None
+    tikkie_link: str|None = None 
+    is_sent: bool|None = None 
+    buyer_user_name: str|None = None 

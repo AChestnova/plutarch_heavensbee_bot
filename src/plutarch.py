@@ -11,120 +11,138 @@ class Plutarch():
 
     def __init__(self):
         # Required
-        self.l = logging.getLogger("plutarch")
+        self.log = logging.getLogger("plutarch")
         self.db: Database = Database()
 
 
-    def get_game(self, game_date) -> Game:
+    def _get_game(self, game_date: str) -> tuple[Game, str]:
         return self.db.read(Game(game_date=game_date))
 
 
-    def get_player(self, user_name) -> Player:
+    def _get_player(self, user_name: str) -> tuple[Player, str]:
         return self.db.read(Player(user_name=user_name))
     
 
-    def register(self, user_name, game_date) -> bool:
-
-        p = self.get_player(user_name)
-        if not p:
-            reason = "You are not a member. Please ask admin to add you."
-            self.l.info(f"Cannot register: {user_name} does not exist in the DB")
-            return reason, False
-
-        g = self.get_game(game_date)
-        if not g:
-             reason = f"There is no game on {game_date}"
-             self.l.info(f"Cannot register: Incorrect game date")
-             return reason, False
-
+    def register(self, user_name: str, game_date: str) -> tuple[bool, str]:
+        """Register the user for a game
+        return success or failure and a reason
+        True, "" means success
+        False "some reason" has context of failure
+        """
+        player, reason = self._get_player(user_name)
+        if reason:
+            self.log.info(f"register: cannot get player details: {reason}")
+            return False, "try again later"
+        game, reason = self._get_game(game_date)
+        if reason:
+            self.log.info(f"register: cannot get game details: {reason}")
+            return False, "try again later"
+        
+        if not player:
+            return False, f"you are not an active member"
+        if not game:
+            return False, f"there is no game on that date"
         # Remove user from auction if it sells the ticket
-        self.db.delete(AvailableSlot(game_date=game_date, seller_user_name=user_name, tikkie_link="",requested_at=0,is_sent=False, buyer_user_name=""))
-
+        slot = AvailableSlot(game_date=game_date, seller_user_name=user_name)
+        _, reason = self.db.delete(slot)
+        if reason:
+            self.log.info(f"register: cannot remove slot from auction: {reason}")
+            return False, "try again later"
+                 
+        registration = Registration(
+            requested_at=int(time.time()),
+            game_date=game.game_date,
+            user_name=player.user_name,
+            prio=player.prio,
+        )
+        _, reason = self.db.create(registration)
+        if reason:
+            self.log.info(f"register: cannot register: {reason}")
+            return False, "try again later"
+        
+        # TODO: Fetch participants and prioritize them
         # TODO: Check current capacity, if already full:
         #           Check current time.
-        #           Kick low prio to waiting list if we have time.
-        #           Reject request if too late           
-        r = Registration(
-            requested_at=int(time.time()),
-            game_date=g.game_date,
-            user_name=p.user_name,
-            prio=p.prio,
-        )
-        
-        self.db.create(r)
-        
-        # TODO: Check current registered players
-        # If more than capacity, we need to un-register low-prioriy and move them to waiting list
+        #           Kick low prio to waiting list if we have time (un-register)
+        #           Reject request if too late
         # TODO: Inform unregistered people
-        self.l.info(f"Registered {r.user_name} for a game on {r.game_date}")
-        reason = ""
-        return reason, True
+        self.log.info(f"Registered {registration.user_name} for a game on {registration.game_date}")
+        return True, ""
         
     
-    def list_participants(self, game_date):
+    def list_participants(self, game_date: str) -> tuple[list[Registration], str]:
 
-        g = self.get_game(game_date)
-        if not g:
-             self.l.info(f"Incorrect game date")
-             return []
-            
-        reg = self.db.read_table("registrations", g.game_date)
-        self.l.info(f"Current registrations: {reg}")
-        return reg
+        game, reason = self._get_game(game_date)
+        if reason:
+            self.log.info(f"list_participants: cannot validate game: {reason}")
+            return [], "try again later"
+        if not game:
+            return [], "" # Return empty set here, we don't care if game exist or not
+         
+        registrations, reason = self.db.read_table("registrations", game.game_date)
+        if reason:
+            self.log.info(f"list_participants: cannot read registrations: {reason}")
+            return [], "try again later"
+        
+        return registrations, ""
 
 
-    def leave_game(self, user_name, game_date, payment_link):
-
+    def leave_game(self, user_name: str, game_date: str, payment_link: str) -> tuple[bool, bool, str]:
+        """Tries to unregister the user and sell his slot
+        Returns statuses for unregistration, selling and reason why they might fail, if any
+        True True "" means unregistered, sold, without errors
+        True False "some reason" means user was unregistered but his slot was not sold for some reason
+        False False "some reason" means user was not unregistered neither his slot was sold
+        """
         # Check if person can sell the slot
         # Eligable candidates must
         #   have prio 1
         #   be registered
         #   not in list of seller already (cannot register/sell twice)
 
-        p = self.get_player(user_name)
-        if not p:
-            self.l.info(f"Cannot sell: {user_name} does not exist in the DB")
-            return False, False
+        player, reason = self._get_player(user_name)
+        if reason:
+            self.log.info(f"leave_game: cannot get player details: {reason}")
+            return  False, False, "try again later"
         
-        # Requested at means nothing here
-        reg = self.db.read(Registration(game_date=game_date, user_name=user_name, requested_at=0, prio=p.prio))
-        if not reg:
-            self.l.info(f"Cannot sell: {user_name} is not registered for the game")
-            return False, False
-
-        if p.prio != Prio.FULL:
-            self.l.info(f"Cannot sell: {user_name} does not have a valid subscription. Unregistering")
-            self._unregister(reg)
-            return True, False
-
-        self.l.info(f"Placing order of {user_name} to auction")
-
-        order = AvailableSlot(
-            game_date=game_date,
-            seller_user_name=user_name,
-            tikkie_link=payment_link,
-            requested_at=int(time.time() * 1000),
-            is_sent=False
-        )
+        if not player:
+            return False, False, "you are not an active member"
         
-        self._unregister(reg)
-        self.db.create(order)
-        return True, True
+        registration, reason = self.db.read(Registration(game_date=game_date, user_name=user_name))
+        if reason:
+            self.log.info(f"leave_game: cannot read registrations: {reason}")
+            return  False, False, "try again later"
+        
+        if not registration:
+            return False, False, f"you are not registered"
+        
+        # Unregistering first regardless of priority
+        # If subsequent placing to auction fails, user can retry by simply registering back
+        _, reason = self.db.delete(registration)
+        if reason:
+            self.log.info(f"leave_game: cannot delete registration: {reason}")
+            return  False, False, "try again later"
+        # If person does not have full subscription, he cannot sell thus fast return
+        if player.prio != 1:
+            return True, False, "" # This is not an error
+        
+        order = AvailableSlot(game_date=game_date, seller_user_name=user_name, requested_at=int(time.time()), tikkie_link=payment_link)
+        self.log.info(f"Placing order of {user_name} to auction")
+        _, reason = self.db.create(order)
+        if reason:
+            self.log.info(f"leave_game: cannot sell slot: {reason}")
+            return True, False, "try again later"
+    
+        return True, True, ""
 
     def _move_to_waiting_list(self, r: Registration):
-        self.l.info(f"Moving {r.user_name} to a waiting list")
+        self.log.info(f"Moving {r.user_name} to a waiting list")
 
-
-    def _unregister(self, r: Registration):
-        self.l.info(f"Removing {r.user_name} from participants on {r.game_date}")
-        self.db.delete(r)
-        # TODO: Update balance
-    
 
     def _update_balance(self, p: Player):
-        self.l.info(f"Updating balance of {p.user_name}. Current balance {p.balance}")
+        self.log.info(f"Updating balance of {p.user_name}. Current balance {p.balance}")
     
 
     def collect_money(self, p: Player):
         tikkie = "https://make-me-rich"
-        self.l.info(f"Sending tikkie to {p.user_name}. Link: {tikkie}")
+        self.log.info(f"Sending tikkie to {p.user_name}. Link: {tikkie}")

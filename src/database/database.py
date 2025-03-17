@@ -1,5 +1,5 @@
 import logging
-from database.gs import *
+import database.gs as gs
 from models import Player, Game, Registration, AvailableSlot
 
 class Database():
@@ -8,187 +8,226 @@ class Database():
        
         self.l = logging.getLogger("database")
 
-    def exists(self, data):
 
-        try:
-            match data:
-                case Player():
-                    res = gs.find_row_index(sheet_name="players", search_value=data.user_name)
-                    return res is not None
-                case Game():
-                    res = gs.find_row_index(sheet_name="games", search_value=data.game_date)
-                    return res is not None
-                case Registration():
-                    res = gs.find_row_index(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
-                    return res is not None
-                case AvailableSlot():
-                    res = gs.find_row_index(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name)
-                    return res is not None
-        except:
-            return False
+    def exists(self, data) -> tuple[bool, str]:
+
+        reason = ""
+        match data:
+            case Player():
+                result, reason = gs.find_row_index(sheet_name="players", search_value=data.user_name)
+            case Game():
+                result, reason = gs.find_row_index(sheet_name="games", search_value=data.game_date)
+            case Registration():
+                result, reason = gs.find_row_index(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
+            case AvailableSlot():
+                result, reason = gs.find_row_index(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
+
+        if reason:
+            return False, f"cannot find item: {reason}"
         
+        if not result:
+            return False, ""
+        return True, ""
 
-    def create(self, data):
+    def create(self, data) -> tuple[bool, str]:
 
-        if self.exists(data):
-            return True
+        exist, reason = self.exists(data)
+        if exist:
+            return True, ""
         
-        try:
-            match data:
-                case Player():
-                    new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
-                    result = gs.write_to_sheet(sheet_name="players", new_data=new_data)
-                case Game():
-                    new_data = [data.game_date, data.cap, data.price, data.is_summarized]
-                    result = gs.write_to_sheet(sheet_name="games", new_data=new_data)
-                case Registration():
-                    new_data = [data.requested_at, data.game_date, data.user_name, data.prio]
-                    result = gs.write_to_sheet(sheet_name="registrations", new_data=new_data)
-                case AvailableSlot():
-                    new_data = [data.game_date, data.seller_user_name, data.tikkie_link, data.is_sent, data.buyer_user_name]
-                    result = gs.write_to_sheet(sheet_name="auctions", new_data=new_data)
+        match data:
+            case Player():
+                new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
+                _, reason = gs.write_to_sheet(sheet_name="players", new_data=new_data)
+            case Game():
+                new_data = [data.game_date, data.cap, data.price, data.is_summarized]
+                _, reason = gs.write_to_sheet(sheet_name="games", new_data=new_data)
+            case Registration():
+                new_data = [data.game_date, data.requested_at, data.user_name, data.prio]
+                _, reason = gs.write_to_sheet(sheet_name="registrations", new_data=new_data)
+            case AvailableSlot():
+                new_data = [data.game_date, data.seller_user_name, data.requested_at, data.tikkie_link, data.is_sent, data.buyer_user_name]
+                _, reason = gs.write_to_sheet(sheet_name="auctions", new_data=new_data)
 
-        except:
-            return False
-        return result
+        if reason:
+            return False, f"cannot create item: {reason}"
+        
+        return True, reason
      
 
-    def read(self, data) -> Player|Game|Registration|AvailableSlot|None:
+    def read(self, data) -> tuple[Player|Game|Registration|AvailableSlot|None, str]:
         
-        try:
-            match data:
-                case Player():
-                    raw_data = gs.read_by_value(sheet_name="players", search_value=data.user_name)[0]
-                    return Player(
-                        user_name=raw_data[0],
-                        name=raw_data[1],
-                        balance=raw_data[2],
-                        can_sell=raw_data[3],
-                        prio=raw_data[4]
-                    )                       
+        match data:
+            case Player():
+                raw_data, reason = gs.read_by_value(sheet_name="players", search_value=data.user_name)
+                if reason:
+                    return None, f"cannot read item: {reason}"
+                if not raw_data:
+                    return None, ""
+                raw_data = raw_data[0]
+                result = Player(
+                    user_name=raw_data[0],
+                    name=raw_data[1],
+                    balance=raw_data[2],
+                    can_sell=raw_data[3],
+                    prio=int(raw_data[4])
+                )                       
 
-                case Game():
-                    raw_data = gs.read_by_value(sheet_name="games", search_value=data.game_date)[0]
-                    return Game(
-                        game_date=raw_data[0],
-                        cap=raw_data[1],
-                        price=raw_data[2],
-                        is_summarized=raw_data[3],
-                    )
+            case Game():
+                raw_data, reason = gs.read_by_value(sheet_name="games", search_value=data.game_date)
+                if reason:
+                    return None, f"cannot read item: {reason}"
+                if not raw_data:
+                    return None, ""
+                raw_data = raw_data[0]
+                result = Game(
+                    game_date=raw_data[0],
+                    cap=raw_data[1],
+                    price=raw_data[2],
+                    is_summarized=raw_data[3],
+                )
 
-                case Registration():
-                    raw_data = gs.read_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)[0]
-                    return Registration(
-                        game_date=raw_data[0],
-                        user_name=raw_data[1],
-                        requested_at=raw_data[2],
-                        prio=raw_data[3],
-                    )
+            case Registration():
+                raw_data, reason = gs.read_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
+                if reason:
+                    return None, f"cannot read item: {reason}"
+                if not raw_data:
+                    return None, ""
+                raw_data = raw_data[0]
+                result = Registration(
+                    game_date=raw_data[0],
+                    requested_at=raw_data[1],
+                    user_name=raw_data[2],
+                    prio=raw_data[3],
+                )
 
-                case AvailableSlot():
-                    raw_data = gs.read_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name)[0]
-                    return AvailableSlot(
-                        game_date=raw_data[0],
-                        seller_user_name=raw_data[1],
-                        requested_at=raw_data[2],
-                        tikkie_link=raw_data[3],
-                        is_sent=raw_data[4],
-                        buyer_user_name=raw_data[5],
-                    )
-            
-        except:
-            return None
+            case AvailableSlot():
+                raw_data, reason = gs.read_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
+                if reason:
+                    return None, f"cannot read item: {reason}"
+                if not raw_data:
+                    return None, ""
+                raw_data = raw_data[0]
+                result = AvailableSlot(
+                    game_date=raw_data[0],
+                    seller_user_name=raw_data[1],
+                    requested_at=raw_data[2],
+                    tikkie_link=raw_data[3],
+                    is_sent=raw_data[4],
+                    buyer_user_name=raw_data[5],
+                )
+        
+        return result, ""
         
 
-    def read_table(self, table: str, filter: str) -> list[Player]|list[Game]|list[Registration]|list[AvailableSlot]:
+    def read_table(self, table: str, filter: str) -> tuple[list[Player]|list[Game]|list[Registration]|list[AvailableSlot], str]:
         """Reads the given sheet and returns a list of objects of the corresponding type. If filter is provided, the rows are filtered"""
         
         result = []
-        try:
-            raw_data = gs.read_by_value(sheet_name=table, search_value=filter)
-            match table:
-                case "players":
-                    for row in range(len(raw_data)):
-                        result.append(Player(
-                            user_name=raw_data[0],
-                            name=raw_data[1], 
-                            balance=raw_data[2],
-                            can_sell=raw_data[3],
-                            prio=raw_data[4],
-                        ))
-
-                case "games":
-                    for row in range(len(raw_data)):
-                        result.append(Game(
-                            game_date=raw_data[0],
-                            cap=raw_data[1], 
-                            price=raw_data[2],
-                            is_summarized=raw_data[3],
+        raw_data, reason = gs.read_by_value(sheet_name=table, search_value=filter)
+        if reason:
+            return [], f"cannot read table: {reason}"
+        if not raw_data:
+            return [], ""
+        match table:
+            case "players":
+                for i in range(len(raw_data)):
+                    row = raw_data[i]
+                    result.append(Player(
+                        user_name=row[0],
+                        name=row[1], 
+                        balance=row[2],
+                        can_sell=row[3],
+                        prio=row[4],
                     ))
 
-                case Registration():
-                    for row in range(len(raw_data)):
-                        result.append(Registration(
-                            requested_at=raw_data[0],
-                            game_date=raw_data[1],
-                            user_name=raw_data[2],
-                            prio=raw_data[3],
-                    ))
+            case "games":
+                for i in range(len(raw_data)):
+                    row = raw_data[i]
+                    result.append(Game(
+                        game_date=row[0],
+                        cap=row[1], 
+                        price=row[2],
+                        is_summarized=row[3],
+                ))
 
-                case AvailableSlot():
-                    for row in range(len(raw_data)):
-                        result.append(AvailableSlot(
-                            game_date=raw_data[0],
-                            seller_user_name=raw_data[1],
-                            tikkie_link=raw_data[2],
-                            requested_at=raw_data[3],
-                            is_sent=raw_data[4],
-                            buyer_user_name=raw_data[5],
-                    ))
-        except:
-            return None
-        return result
+            case "registrations":
+                self.l.info(f"read_table: registrations: iterating over {raw_data}")
+                for i in range(len(raw_data)):
+                    row = raw_data[i]
+                    result.append(Registration(
+                        game_date=row[0],
+                        requested_at=row[1],
+                        user_name=row[2],
+                        prio=row[3],
+                ))
+
+            case "auctions":
+                for i in range(len(raw_data)):
+                    row = raw_data[i]
+                    result.append(AvailableSlot(
+                        game_date=row[0],
+                        seller_user_name=row[1],
+                        requested_at=row[2],
+                        tikkie_link=row[3],
+                        is_sent=row[4],
+                        buyer_user_name=row[5],
+                ))
+                    
+                
+        return result, ""
 
 
-    def update(self, data):
+    def update(self, data) -> tuple[bool, str]:
         # TODO: not used yet, adjust to the use case. The current implementation is a bit odd, 
         # since we are updating only metadata and not the key field(s)
 
-        if not self.exists(data):
-            self.create(data)
+        exist, reason = self.exists(data)
+        if reason:
+            return False, f"cannot update item: {reason}"
+        if not exist:
+            return False, f"cannot update: {reason}"
         
-        try:
-            match data:
-                case Player():
-                    new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
-                    result = gs.update_row_by_value(sheet_name="players", search_value=data.user_name, new_data=new_data)
-                case Game():
-                    new_data = [data.game_date, data.cap, data.price, data.is_summarized]
-                    result = gs.update_row_by_value(sheet_name="games", search_value=data.game_date, new_data=new_data)
-                case Registration():
-                    new_data = [data.requested_at, data.game_date, data.user_name, data.prio]
-                    result = gs.update_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
-                case AvailableSlot():
-                    new_data = [data.game_date, data.seller_user_name, data.tikkie_link, data.is_sent, data.buyer_user_name]
-                    result = gs.update_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
-        except:
-            return False
-        return result
+        match data:
+            case Player():
+                new_data = [data.user_name, data.name, data.balance, data.can_sell, data.prio]
+                _, reason = gs.update_row_by_value(sheet_name="players", search_value=data.user_name, new_data=new_data)
+            case Game():
+                new_data = [data.game_date, data.cap, data.price, data.is_summarized]
+                _, reason= gs.update_row_by_value(sheet_name="games", search_value=data.game_date, new_data=new_data)
+            case Registration():
+                new_data = [data.game_date, data.requested_at, data.user_name, data.prio]
+                _, reason= gs.update_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
+            case AvailableSlot():
+                new_data = [data.game_date, data.seller_user_name, data.requested_at, data.tikkie_link, data.is_sent, data.buyer_user_name]
+                _, reason= gs.update_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name, new_data=new_data)
+    
+        if reason:
+            return False, f"cannot update item: {reason}"
+        
+        return True, reason
 
 
-    def delete(self, data):
+    def delete(self, data) -> tuple[bool, str]:
+
+        exist, reason = self.exists(data)
+        if reason:
+            return False, f"cannot delete item: {reason}"
+        if not exist:
+            return True, ""
         
-        try:
-            match data:
-                case Player():
-                    result = gs.delete_row_by_value(sheet_name="players", search_value=data.user_name)
-                case Game():
-                    result = gs.delete_row_by_value(sheet_name="games", search_value=data.game_date)
-                case Registration():
-                    result = gs.delete_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
-                case AvailableSlot():
-                    result = gs.delete_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.user_name)
+        result = False
+        match data:
+            case Player():
+                _, reason = gs.delete_row_by_value(sheet_name="players", search_value=data.user_name)
+            case Game():
+                _, reason = gs.delete_row_by_value(sheet_name="games", search_value=data.game_date)
+            case Registration():
+                _, reason = gs.delete_row_by_value(sheet_name="registrations", search_value=data.game_date, search_value_2=data.user_name)
+            case AvailableSlot():
+                _, reason = gs.delete_row_by_value(sheet_name="auctions", search_value=data.game_date, search_value_2=data.seller_user_name)
         
-        except:
-            return False
-        return result
+        if reason:
+            return False, f"cannot delete item: {reason}"
+        
+        return True, reason

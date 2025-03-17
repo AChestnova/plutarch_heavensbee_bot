@@ -17,7 +17,7 @@ Press Ctrl-C on the command line to stop the bot.
 
 import logging
 from plutarch import Plutarch
-from helpers import next_sunday, sunday_in_two_weeks
+from helpers import get_this_sunday, get_next_sunday
 from dynaconf import Dynaconf
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -96,12 +96,12 @@ async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons"""
+    """Propose to join a game in this sunday or sunday in 2 weeks"""
     query = update.callback_query
     await query.answer()
 
-    this_sunday = next_sunday().strftime("%Y-%m-%d")
-    in_two_weeks = sunday_in_two_weeks().strftime("%Y-%m-%d")
+    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
+    in_two_weeks = get_next_sunday().strftime("%Y-%m-%d")
     keyboard = [
         [
             InlineKeyboardButton("This week", callback_data=f"join_game:{this_sunday}"),
@@ -116,32 +116,37 @@ async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
+    """Calls Plutarch to register user on a given date. 
+    Obtains date from callback_date and user from context
+    """
     query = update.callback_query
     await query.answer()
 
     game_date = query.data.split(':')[1]
     user_id = context.bot_data["user_id"]
 
-    reason, success = plutarch.register(user_id, game_date)
+    
+    success, reason = plutarch.register(user_id, game_date)
+    
     if success:
-        reply = f"Successfully registered on {game_date}!"
+        reply = f"You were registered for a game on {game_date}!"
     else:
-        reply = f"Cannot registered on {game_date}. {reason}"
+        reply = f"You cannot join the game: {reason}"
 
     await query.edit_message_text(
-        text=reply+"\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
+        text=reply+"\n\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
     )
     return END_ROUTES
 
 
 async def leave_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
+    """Propose to leave a game in this sunday or sunday in 2 weeks"""
+
     query = update.callback_query
     await query.answer()
 
-    this_sunday = next_sunday().strftime("%Y-%m-%d")
-    in_two_weeks = sunday_in_two_weeks().strftime("%Y-%m-%d")
+    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
+    in_two_weeks = get_next_sunday().strftime("%Y-%m-%d")
 
     keyboard = [
         [
@@ -159,23 +164,27 @@ async def leave_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def leave_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Show new choice of buttons. This is the end point of the conversation."""
+    """Calls Plutarch to unregister the user on a given date and try to sell his slot 
+    Obtains date from callback_date and user from context.
+    """
     query = update.callback_query
     await query.answer()
     
     user_id = context.bot_data["user_id"]
     game_date = query.data.split(':')[1]
 
-    unergistered, sold = plutarch.leave_game(user_id, game_date, "https://payme")
+    unergistered, sold, reason = plutarch.leave_game(user_id, game_date, "https://payme")
     if unergistered:
-        reply = f"Unregistered from {game_date}"
+        reply = f"You were un-registered from a game on {game_date}"
         if sold:
-            reply += " and added your slot to auction!"
+            reply += " and I also added your slot to auction!"
+        elif reason:
+            reply += " but could't add it to auction: {reason}"
     else:
-        reply = f"Looks like you were not registered on {game_date}. Nothing to do!"
+        reply = f"You shall not leave: {reason}"
 
     await query.edit_message_text(
-        text=reply+"\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
+        text=reply+"\n\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
     )
 
     return END_ROUTES
@@ -193,24 +202,32 @@ async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    this_sunday = next_sunday().strftime("%Y-%m-%d")
-    participants = plutarch.list_participants(this_sunday)
-    reply = "---\n"
-    if participants:
-       for r in participants:
-            reply += f"{r.game_date} - {r.user_name} - {r.prio} - {r.requested_at}\n"
-    else:
-       reply = f"No user registerer or there is no game on {this_sunday}"
-    reply += "\n---"  
+    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
+    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
 
-    in_two_weeks = sunday_in_two_weeks().strftime("%Y-%m-%d")
-    participants = plutarch.list_participants(in_two_weeks)
-    reply += "---\n"
-    if participants:
-       for r in participants:
-            reply += f"{r.game_date} - {r.user_name} - {r.prio} - {r.requested_at}\n"
-    else:
-       reply += f"No user registerer or there is no game on {in_two_weeks}"
+    participants_this_sunday, reason = plutarch.list_participants(this_sunday)
+    if reason:
+        reply = "Something went wrong, {reason}"
+        await query.edit_message_text(text=reply)
+        return ConversationHandler.END
+    
+    participants_next_sunday, reason = plutarch.list_participants(next_sunday)
+    if reason:
+        reply = "Something went wrong, {reason}"
+        await query.edit_message_text(text=reply)
+        return ConversationHandler.END
+ 
+    reply = f"*{this_sunday}*\n"
+    if not participants_this_sunday:
+        reply += f"No one is registered\n" 
+    for r in participants_this_sunday:
+            reply += f"{r.user_name} registered at {r.requested_at} with priority {r.prio}\n"
+    
+    reply += f"\n*{next_sunday}*\n"
+    if not participants_next_sunday:
+        reply += f"No one is registered\n" 
+    for r in participants_next_sunday:
+            reply += f"{r.user_name} registered at {r.requested_at} with priority {r.prio}\n"
     reply += "\n---\n" 
 
     await query.edit_message_text(
@@ -249,6 +266,8 @@ def main() -> None:
             ]
         },
         fallbacks=[CommandHandler("start", start)],
+        per_user=True,
+        per_chat=True
     )
 
     # Add ConversationHandler to application that will be used for handling updates
