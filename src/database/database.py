@@ -29,10 +29,6 @@ class Database():
         return True, ""
 
     def create(self, data: Storable) -> tuple[bool, str]:
-
-        exist, err = self.exists(data)
-        if exist:
-            return True, ""
         
         _, err = gs.write_to_sheet(sheet_name=data.sheet_name(), new_data=list(data))
         if err:
@@ -71,6 +67,7 @@ class Database():
 
         result = []
         for i in range(len(raw_data)):
+            print(raw_data)
             item = storable.from_list(raw_data[i])
             result.append(item)
                 
@@ -78,22 +75,17 @@ class Database():
 
 
     def update(self, data) -> tuple[bool, str]:
-        # TODO: not used yet, adjust to the use case. The current implementation is a bit odd, 
-        # since we are updating only metadata and not the key field(s)
+        # TODO: not used yet, adjust to the use case.
+        # The current implementation is a bit odd, 
+        #   since we are updating only metadata and not the key field(s)
 
-        exist, err = self.exists(data)
-        if err:
-            return False, f"cannot update item: {err}"
-        if not exist:
-            return False, f"cannot update: {err}"
-        
         value1, value2 = data.unique_keys
         _, err = gs.update_row_by_value(sheet_name=data.sheet_name(), search_value=value1, search_value_2=value2, new_data=list(data))
      
         if err:
             return False, f"cannot update item: {err}"
         
-        return True, err
+        return True, ""
 
 
     def delete(self, data) -> tuple[bool, str]:

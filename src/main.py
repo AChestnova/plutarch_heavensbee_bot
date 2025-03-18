@@ -19,7 +19,7 @@ import logging
 from plutarch import Plutarch
 from dynaconf import Dynaconf
 from datetime import datetime
-from models import Priorities
+from models import Priorities, BotStorage
 from helpers import get_this_sunday, get_next_sunday
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -30,14 +30,14 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-# Enable logging
+# Enable loggings
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 # set higher logging level for httpx to avoid all GET and POST requests being logged
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
 plutarch = Plutarch()
 
@@ -47,55 +47,92 @@ settings = Dynaconf(
     sysenv_fallback=True,
 )
 
-START_ROUTES, END_ROUTES, HELPERS = range(3)
+START_ROUTES, HELPERS = range(2)
 
 # 3 horizontally splitted buttons
-START_REPLY_MARKUP = InlineKeyboardMarkup([
+START_REPLY_MARKUP = [
             [InlineKeyboardButton("Join The Games", callback_data="join_the_games")],
             [InlineKeyboardButton("Yield The Arena", callback_data="leave_the_games")],
             [InlineKeyboardButton("Show The Roster", callback_data="see_the_roster")],
-    ])
-
-# 2 vertically splitted buttons
-END_REPLY_MARKUP = InlineKeyboardMarkup([[
-    InlineKeyboardButton("Yes, let's do it again!", callback_data="start_over"),
-    InlineKeyboardButton("Nah, I've had enough ...", callback_data="end"),
-    ]])
+    ]
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Send message on `/start`."""
     # Get user that sent /start and log his name
-    user = update.message.from_user
-    context.bot_data["user_id"] = user.name
-    # Send message with text and appended InlineKeyboard
-    reply = [f"Greetings {user.name}!"]
-
-    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
-    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
-    registered_this_sunday, err = plutarch.is_registered(user.name, this_sunday)
+    # Store it in a context
+    user_name = update.message.from_user.name
+    context.bot_data[BotStorage.USER_ID] = user_name
+    # HTML-formatted header of the reply
+    reply = [f"Greetings <b>{user_name}</b>!"]
+    # Check if player is added to the list of players 
+    player, err = plutarch.get_player(user_name)
+    context.bot_data[BotStorage.PLAYER] = player
+    # If we cannot get details from the DB - return
     if err:
         reply.append(f"I cannot foresee your future now - please come later")
-        await update.message.reply_text(text=text)
+        text = "\n".join(reply)
+        await update.message.reply_text(text=text, parse_mode="HTML")
         return ConversationHandler.END
-    registered_next_sunday, err = plutarch.is_registered(user.name, next_sunday)
-    if err:
-        reply.append(f"I cannot foresee your future now - please come later")
-        await update.message.reply_text(text=text)
+    # Send player to admin to validate and add him
+    if not player:
+        reply.append(f"You are not registered member. Please ask admin to add you")
+        text = "\n".join(reply)
+        await update.message.reply_text(text=text, parse_mode="HTML")
         return ConversationHandler.END
     
-    registration_status = []
-    if registered_this_sunday:
-        registration_status.append(this_sunday)
-    if registered_next_sunday:
-        registration_status.append(next_sunday)
-    if registered_this_sunday or registered_next_sunday:
-        reply.append(f"I see you have been registered for " + " and ".join(registration_status) + ". Great!")
+    # Check if the user already registered
+    upcoming_games = [
+        get_this_sunday().strftime("%Y-%m-%d"),
+        get_next_sunday().strftime("%Y-%m-%d")
+    ]
+    context.bot_data[BotStorage.UPCOMING_GAME_DATES] = upcoming_games
+
+    registrations = plutarch.is_registered(user_name, upcoming_games)
+   
+
+    registration_dates = []
+    registration_objects = []
+    for registration, err in registrations:
+        if err:
+            reply.append(f"I cannot foresee your future now - please come later")
+            text = "\n".join(reply)
+            await update.message.reply_text(text=text, parse_mode="HTML")
+            return ConversationHandler.END
+        if registration: # Not None
+            registration_dates.append(registration.game_date)
+            registration_objects.append(registration)
+
+    context.bot_data[BotStorage.REGISTRATION_DATES] = registration_dates
+    context.bot_data[BotStorage.REGISTRATIONS] = registration_objects
+
+    if registration_dates:
+        reply.append(f"I see you have been registered for " + " and ".join(registration_dates) + ". Great!")
     else:
-        reply.append(f"I see you are not registered for any game yet. Please join!")
-    reply.append(f"\nWhat may I help you with?")
+        reply.append(f"I see you are <b>not</b> registered for any game yet. Please join!")
     text = "\n".join(reply)
-    await update.message.reply_text(text=text, reply_markup=START_REPLY_MARKUP)
-    # Tell ConversationHandler that we're in state `FIRST` now
+    # Send only those buttons that are needed now
+    # Add context for further calls
+    # To minimize amount of calls, from here onwards in any other handler we assume:
+    # User is valid and registered
+    # Game does exist
+    # TODO: this should be handled via, returning closest Sundays
+    #   get_this_sunday - closest available game
+    #   get_next_sunday - closest available game after that
+    
+    
+    
+    if len(registration_dates) == 2:
+        # Do not show "Join The Games", already joined everything
+        buttons = START_REPLY_MARKUP[1:]
+    elif len(registration_dates) == 1:
+        # Show all options
+        buttons = START_REPLY_MARKUP
+    else:
+        # do not show "Yield The Arena"
+        buttons = START_REPLY_MARKUP[:1] + START_REPLY_MARKUP[2:]
+    reply_markup = InlineKeyboardMarkup(buttons)
+    await update.message.reply_text(text=text, parse_mode="HTML", reply_markup=reply_markup)
+    # Tell ConversationHandler to send those buttons
     return START_ROUTES
 
 
@@ -105,40 +142,25 @@ async def end(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text(text="See you next time!")
+    await query.edit_message_text(text="See you next time!", parse_mode="HTML")
     return ConversationHandler.END
-
-
-async def start_over(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Prompt same text & keyboard as `start` does but not as new message"""
-    # Get CallbackQuery from Update
-    query = update.callback_query
-    # CallbackQueries need to be answered, even if no notification to the user is needed
-    # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
-    await query.answer()
-    # Instead of sending a new message, edit the message that
-    # originated the CallbackQuery. This gives the feeling of an
-    # interactive menu.
-    await query.edit_message_text(text="Of course! What else?", reply_markup=START_REPLY_MARKUP)
-    return START_ROUTES
-
 
 async def join_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Propose to join a game in this sunday or sunday in 2 weeks"""
     query = update.callback_query
     await query.answer()
 
-    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
-    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
-    keyboard = [
-        [
-            InlineKeyboardButton("This week", callback_data=f"join_game:{this_sunday}"),
-            InlineKeyboardButton("Next week", callback_data=f"join_game:{next_sunday}"),
-        ]
-    ]
+    upcoming_games = context.bot_data[BotStorage.UPCOMING_GAME_DATES]
+    registrations = context.bot_data[BotStorage.REGISTRATION_DATES]
+
+    keyboard = [[]]
+    for game in upcoming_games:
+        if not game in registrations:
+            keyboard[0].append(InlineKeyboardButton(f"Join on {game}", callback_data=f"join_game:{game}"))
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(
-        text=f"Which week you'd like to play?", reply_markup=reply_markup
+        text=f"You can register for this games", parse_mode="HTML", reply_markup=reply_markup
     )
     return HELPERS
 
@@ -151,19 +173,16 @@ async def join_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await query.answer()
 
     game_date = query.data.split(':')[1]
-    user_id = context.bot_data["user_id"]
+    player = context.bot_data[BotStorage.PLAYER]
 
-    
-    _, err = plutarch.register(user_id, game_date)
+    _, err = plutarch.register(player, game_date)
     if not err:
         reply = f"You were registered for a game on {game_date}!"
     else:
         reply = f"You cannot join the game: {err}"
 
-    await query.edit_message_text(
-        text=reply+"\n\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
-    )
-    return END_ROUTES
+    await query.edit_message_text(text=reply, parse_mode="HTML")
+    return ConversationHandler.END
 
 
 async def leave_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -172,19 +191,18 @@ async def leave_the_games(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     query = update.callback_query
     await query.answer()
 
-    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
-    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
+    upcoming_games = context.bot_data[BotStorage.UPCOMING_GAME_DATES]
+    registrations = context.bot_data[BotStorage.REGISTRATION_DATES]
 
-    keyboard = [
-        [
-            InlineKeyboardButton("This week", callback_data=f"leave_game:{this_sunday}"),
-            InlineKeyboardButton("Next week", callback_data=f"leave_game:{next_sunday}"),
-        ]
-    ]
+    keyboard = [[]]
+    for game in upcoming_games:
+        if game in registrations:
+            keyboard[0].append(InlineKeyboardButton(f"Leave {game}", callback_data=f"leave_game:{game}"))
+
     reply_markup = InlineKeyboardMarkup(keyboard)
 
     await query.edit_message_text(
-        text="Which week you'd like to yield?", reply_markup=reply_markup
+        text="Which week you'd like to yield?", parse_mode="HTML", reply_markup=reply_markup
     )
     # Transfer to conversation state `SECOND`
     return HELPERS
@@ -197,10 +215,16 @@ async def leave_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     
-    user_id = context.bot_data["user_id"]
+    player = context.bot_data[BotStorage.PLAYER]
+    registrations = context.bot_data[BotStorage.REGISTRATIONS]
+    print(registrations)
+    # We trust this is set to a date where user is already registered
     game_date = query.data.split(':')[1]
 
-    unergistered, sold, err = plutarch.leave_game(user_id, game_date, "https://payme")
+    # Just a bit of syntax sugar here. Get registration for matching date
+    registration = [r for r in registrations if r.game_date == game_date][0]
+
+    unergistered, sold, err = plutarch.leave_game(player, registration, "pay to https://payme")
     if unergistered:
         reply = f"You were un-registered from a game on {game_date}"
         if sold:
@@ -210,83 +234,104 @@ async def leave_game(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     else:
         reply = f"You shall not leave: {err}"
 
-    await query.edit_message_text(
-        text=reply+"\n\nDo you want to start over?", reply_markup=END_REPLY_MARKUP
-    )
 
-    return END_ROUTES
+    await query.edit_message_text(text=reply, parse_mode="HTML")
+    return ConversationHandler.END
 
 
 async def see_the_roster(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Show new choice of buttons"""
     query = update.callback_query
     await query.answer()
-    keyboard = [
-    [
-        InlineKeyboardButton("Yes, let's do it again!", callback_data="start_over"),
-        InlineKeyboardButton("Nah, I've had enough ...", callback_data="end"),
-    ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
 
-    this_sunday = get_this_sunday().strftime("%Y-%m-%d")
-    participants_this_sunday, err = plutarch.list_participants(this_sunday)
-    if err:
-        reply = "I cannot foresee the future now - please come later"
-        await query.edit_message_text(text=reply)
-        return ConversationHandler.END
-    for i, player in enumerate(participants_this_sunday):
-        date = datetime.fromtimestamp(int(player.requested_at))
-        formatted_date = date.strftime('%y-%m-%d %H:%M')
-        participants_this_sunday[i] = f"{player.user_name} ({Priorities(player.prio).name}) at {formatted_date}"
+    priority_to_emoji_map = {
+        1: "∞", # Infinite Arena Access - No Reaping Required!
+        2: "🎟️", # Arena Strategist – Choose Your Matches Wisely!
+        3: "🎲" # The Reaped – One Game, One Fate!
+    }
 
+    upcoming_games = context.bot_data[BotStorage.UPCOMING_GAME_DATES]
+    
     reply = []
-    reply.append(f"{this_sunday}")
-    
-    # Trying to split participants between current and waiting list
-    main_section = participants_this_sunday[:14]
-    waiting_section = participants_this_sunday[14:]
-    
-    reply.extend(main_section)
-    
-    if waiting_section:
-        reply.append("--- waiting list ---")
-        reply.extend(waiting_section)
-    
-    reply.append("---")
-    
-    # Another day, same logic
-    next_sunday = get_next_sunday().strftime("%Y-%m-%d")
-    participants_next_sunday, err = plutarch.list_participants(next_sunday)
-    if err:
-        reply = "I cannot foresee the future now - please come later"
-        await query.edit_message_text(text=reply)
-        return ConversationHandler.END
-    for i, player in enumerate(participants_next_sunday):
-        date = datetime.fromtimestamp(int(player.requested_at))
-        formatted_date = date.strftime('%y-%m-%d %H:%M')
-        participants_next_sunday[i] = f"{player.user_name} ({Priorities(player.prio).name}) at {formatted_date}"
+    for game in upcoming_games:
+        participants, err = plutarch.list_participants(game)
+        if err:
+            reply = "I cannot foresee the future <b>now</b> - please come later"
+            await query.edit_message_text(text=reply)
+            return ConversationHandler.END
+        for i, player in enumerate(participants):
+            date = datetime.fromtimestamp(int(player.requested_at))
+            formatted_date = date.strftime('%y-%m-%d %H:%M')
+            # TODO: looks like there are roughly 40 characters in a string
+            # Need to find a way how to align it 
+            participants[i] = f"{priority_to_emoji_map[player.prio]} {player.user_name} at {formatted_date}"
 
-    reply.append(f"{next_sunday}")
-    
-    main_section = participants_next_sunday[:14]
-    waiting_section = participants_next_sunday[14:]
-    
-    reply.extend(main_section)
-    
-    if waiting_section:
-        reply.append("--- waiting list ---")
-        reply.extend(waiting_section)
-    
-    reply.append("---")
-    reply.append("\nDo you want to start over?")
 
+        # TODO: Add flip - if we are past registration deadline, change the subject to
+        # <i>No more waiting. No more second chances. Play hard. 🔥</i>
+        # <i>No more waiting. No more hesitation. Just play. </i>
+        reply.append(f"<b>{game}</b>\n───────────────\n<i>Hold tight. The arena is filling up…</i>\n")
+        
+        # Trying to split participants between current and waiting list
+        main_section = participants[:14]
+        waiting_section = participants[14:]
+        
+        reply.extend(main_section)
+        
+        if waiting_section:
+            reply.append("\n<b>👀 Waiting List 👀</b>\n───────────────\n<i>Patience is a virtue… Your turn will come!</i>\n")
+            reply.extend(waiting_section)
+        
+        reply.append("\n")
+    
     text = "\n".join(reply)
-    await query.edit_message_text(
-        text=text, reply_markup=reply_markup
-    )
-    return END_ROUTES
+    await query.edit_message_text(text=text, parse_mode="HTML")
+    return ConversationHandler.END
 
+async def summarize(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+
+    user_name = update.message.from_user.name
+    context.bot_data[BotStorage.USER_ID] = user_name
+    if user_name != "@kchestnov":
+        return ConversationHandler.END
+    
+    # TODO: Validate input
+    if len(context.args) == 1:
+        game_date = context.args[0]
+    else:
+        game_date = get_this_sunday().strftime("%Y-%m-%d")
+
+    text = f"Let's see who pays whom for on {game_date}\n" 
+    message = await update.message.reply_text(text=text, parse_mode="HTML")
+    participants, err = plutarch.list_participants(game_date)
+    if err:
+        reply = "I cannot help you <b>now</b> - please come later"
+        await message.edit_text(text=reply)
+        return ConversationHandler.END
+    
+    text += "Current list is:\n"
+    registrations = participants[:14]
+    for registration in registrations:
+        player, err = plutarch.get_player(registration.user_name)
+        # if player.balance > 0:
+        #     text += f"{registration.user_name}'s balance: {player.balance}\n"
+        #     err = plutarch.update_balance(player)
+        #     if err:
+        #         reply = "I cannot help you now - please come later"
+        #         await message.edit_text(text=reply)
+        #         return ConversationHandler.END
+        # else:
+        slot, err = plutarch.collect_money(player, registration)
+        if err:
+            reply = "I cannot help you <b>now</b> - please come later"
+            await message.edit_text(text=reply)
+            return ConversationHandler.END
+        text += f"{slot.buyer_user_name} {slot.tikkie_link}\n"
+            
+        await message.edit_text(text=text, parse_mode="HTML")
+
+    return ConversationHandler.END
+    
 
 def main() -> None:
     """Run the bot."""
@@ -300,19 +345,14 @@ def main() -> None:
     # $ means "end of line/string"
     # So ^ABC$ will only allow 'ABC'
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start), CommandHandler("summarize", summarize)],
         states={
             START_ROUTES: [
                 CallbackQueryHandler(join_the_games, pattern=r"join_the_games"),
                 CallbackQueryHandler(leave_the_games, pattern=r"leave_the_games"),
                 CallbackQueryHandler(see_the_roster, pattern=r"see_the_roster"),
             ],
-            END_ROUTES: [
-                CallbackQueryHandler(start_over, pattern=r"start_over"),
-                CallbackQueryHandler(end, pattern=r"end"),
-            ],
             HELPERS: [
-                
                 CallbackQueryHandler(join_game, pattern=r"join_game:\d{4}-\d{2}-\d{2}"),
                 CallbackQueryHandler(leave_game, pattern=r"leave_game:\d{4}-\d{2}-\d{2}"),
             ]
@@ -324,8 +364,11 @@ def main() -> None:
 
     # Add ConversationHandler to application that will be used for handling updates
     application.add_handler(conv_handler)
-
-    # Run the bot until the user presses Ctrl-C
+    # This handles CTR+C under the hood
+    # TODO: Need to close all on-going conversations
+    # or remove buttons from them
+    # TODO: Need to terminage conversations (remove buttons and send Conversation.END)
+    # for every request after certain threshold
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":

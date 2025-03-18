@@ -17,6 +17,12 @@ SHEET_IDS = {
     "auctions": GS_SETTINGS.google.auctions_sheet_id,
 }
 
+SHEET_NUM_COL = {
+    "players": 5,
+    "games": 4,
+    "registrations": 4,
+    "auctions": 6
+}
 log = logging.getLogger("database")
 
 def column_number_to_excel_column_name(n):
@@ -48,7 +54,7 @@ def read_sheet(sheet_name, columns_number=5) -> tuple[list, str]:
     """Function to read data from a sheet
     return list of lists that represents spreadsheet
     and error in case we cannot connect to a database"""
-    last_column = column_number_to_excel_column_name(columns_number)
+    last_column = column_number_to_excel_column_name(SHEET_NUM_COL[sheet_name])
 
     log.info(f"read_sheet: reading from {sheet_name} {last_column}")
     spreadsheets = authenticate_to_gs()
@@ -187,15 +193,17 @@ def update_row_by_value(sheet_name, search_value, search_value_2, new_data) -> t
     """Searches for a row containing search_value in sheet_name and updates the first one found with new_data"""
 
     last_column = column_number_to_excel_column_name(len(new_data))
-    row_number, err = find_row_index(spreadsheets, sheet_name, search_value, search_value_2)
+    spreadsheets = authenticate_to_gs()
+    row_number, err = find_row_index(sheet_name, search_value, search_value_2)
     log.info(f"update_row_by_value: updating {sheet_name} {row_number}")
     if err:
+        log.info(f"update_row_by_value: cannot update row in {sheet_name}: {err}")
         return False, f"cannot update row in {sheet_name}: {err}"
     
     if not row_number:
+        log.info(f"update_row_by_value: cannot update row in {sheet_name}: {err}")
         return False, f"cannot update row in {sheet_name}: no row found"
     
-    spreadsheets = authenticate_to_gs()
     try:
         request = spreadsheets.values().update(
             spreadsheetId=GS_SETTINGS.google.spreadsheet_id,
@@ -204,12 +212,14 @@ def update_row_by_value(sheet_name, search_value, search_value_2, new_data) -> t
             body={"values": [new_data]},
         )
         result = request.execute()
+        log.info(f"update_row_by_value: result {result}")
     except:
         return False, f"cannot update row in {sheet_name}: database unavailable"
 
     # TODO: result always exist, need to check specific content
     if not result:
-        return False, f"cannot delete row in {sheet_name}: wrong result"
+        log.info(f"update_row_by_value: cannot update row in {sheet_name}: wrong result {result}")
+        return False, f"cannot update row in {sheet_name}: wrong result"
     
     return True, ""
 

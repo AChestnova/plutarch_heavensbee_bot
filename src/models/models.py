@@ -1,5 +1,5 @@
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import Protocol
 from enum import IntEnum, StrEnum
 
@@ -8,7 +8,12 @@ class Priorities(IntEnum):
     HALF = 2
     ONE_TIME = 3
 
-
+class BotStorage(StrEnum):
+    USER_ID = "user_id"
+    REGISTRATIONS = "registrations"
+    REGISTRATION_DATES = "registration_dates"
+    UPCOMING_GAME_DATES = "upcoming_game_dates"
+    PLAYER = "player"
 
 @dataclass
 class Storable(Protocol):  # Optional: Define a protocol for type safety
@@ -21,6 +26,7 @@ class Storable(Protocol):  # Optional: Define a protocol for type safety
     def unique_keys(self) -> tuple[str, str]:
         raise NotImplementedError
     
+    # TODO: Implement it here and remove from Child classes
     @classmethod
     def from_list(cls, data: list[str]):
         raise NotImplementedError
@@ -51,11 +57,11 @@ class Player(Storable):
         """Parses and converts a list of strings into a Game instance."""
         
         # TODO: need to figure a way to grab real amount of fields and do not hardcore them
-        if len(data) != 5: 
-            raise ValueError("Expected exactly 5 values")
+        if len(data) != len(fields(cls)): 
+            raise ValueError(f"Expected exactly {len(fields(cls))} values")
         
         user_name, name, balance, can_sell, prio = data                 # Unpack strings
-        return cls(user_name, name, balance, int(can_sell), int(prio))  # Convert fields    
+        return cls(user_name, name, int(balance), int(can_sell), int(prio))  # Convert fields    
 
 
 @dataclass
@@ -82,9 +88,8 @@ class Game(Storable):
     def from_list(cls, data: list[str]):
         """Parses and converts a list of strings into a Game instance."""
         
-        # TODO: need to figure a way to grab real amount of fields and do not hardcore them
-        if len(data) != 4: 
-            raise ValueError("Expected exactly 4 values")
+        if len(data) != len(fields(cls)): 
+            raise ValueError(f"Expected exactly {len(fields(cls))} values")
         
         game_date, cap, price, is_summarized = data                         # Unpack strings
         return cls(game_date, int(cap), int(price), int(is_summarized))     # Convert fields    
@@ -116,9 +121,8 @@ class Registration(Storable):
     def from_list(cls, data: list[str]):
         """Parses and converts a list of strings into a Game instance."""
         
-        # TODO: need to figure a way to grab real amount of fields and do not hardcore them
-        if len(data) != 4: 
-            raise ValueError("Expected exactly 4 values")
+        if len(data) != len(fields(cls)): 
+            raise ValueError(f"Expected exactly {len(fields(cls))} values")
         
         game_date, requested_at, user_name, prio = data                         # Unpack strings
         return cls(game_date, int(requested_at), user_name, int(prio))     # Convert fields    
@@ -151,9 +155,8 @@ class AvailableSlot(Storable):
     def from_list(cls, data: list[str]):
         """Parses and converts a list of strings into a Game instance."""
         
-        # TODO: need to figure a way to grab real amount of fields and do not hardcore them
-        if len(data) != 6: 
-            raise ValueError("Expected exactly 4 values")
+        if len(data) != len(fields(cls)): 
+            raise ValueError(f"Expected exactly {len(fields(cls))} values")
         
         game_date, seller_user_name, requested_at, tikkie_link, is_sent, buyer_user_name = data                    # Unpack strings
         return cls(game_date, seller_user_name, int(requested_at), tikkie_link, int(is_sent), buyer_user_name)     # Convert fields    

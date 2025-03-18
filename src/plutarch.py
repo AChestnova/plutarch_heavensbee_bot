@@ -19,31 +19,18 @@ class Plutarch():
         return self.db.read(Game(game_date=game_date))
 
 
-    def _get_player(self, user_name: str) -> tuple[Player|None, str]:
+    def get_player(self, user_name: str) -> tuple[Player|None, str]:
         return self.db.read(Player(user_name=user_name))
     
 
-    def register(self, user_name: str, game_date: str) -> tuple[bool, str]:
+    def register(self, player: Player, game_date: str) -> tuple[bool, str]:
         """Register the user for a game
         return success or failure and an error if any
         True, "" means success
         False "some error" has context of failure
         """
-        player, err = self._get_player(user_name)
-        if err:
-            self.log.info(f"register: cannot get player details: {err}")
-            return False, "try again later"
-        game, err = self._get_game(game_date)
-        if err:
-            self.log.info(f"register: cannot get game details: {err}")
-            return False, "try again later"
-        
-        if not player:
-            return False, f"you are not an active member"
-        if not game:
-            return False, f"there is no game on that date"
         # Remove user from auction if it sells the ticket
-        slot = AvailableSlot(game_date=game_date, seller_user_name=user_name)
+        slot = AvailableSlot(game_date=game_date, seller_user_name=player.user_name)
         _, err = self.db.delete(slot)
         if err:
             self.log.info(f"register: cannot remove slot from auction: {err}")
@@ -51,7 +38,7 @@ class Plutarch():
                  
         registration = Registration(
             requested_at=int(time.time()),
-            game_date=game.game_date,
+            game_date=game_date,
             user_name=player.user_name,
             prio=player.prio,
         )
@@ -84,30 +71,22 @@ class Plutarch():
         # # TODO: Inform unregistered people
         # return True, ""
         
-    def is_registered(self, user_name: str, game_date: str) -> tuple[list[Registration], str]:
-        registration, err = self.db.read(Registration(game_date=game_date, user_name=user_name))
-        if err:
-            self.log.info(f"list_user_registrations: cannot read registration: {err}")
-            return  False, "try again later"
-        
-        if not registration:
-            return False, ""
-    
-        return True, ""
-
+    def is_registered(self, user_name: str, game_dates: list[str]) -> list[tuple[Registration|None, str]]:
+        result = []
+        for game_date in game_dates:
+            registration, err = self.db.read(Registration(game_date=game_date, user_name=user_name))
+            if err:
+                self.log.info(f"list_user_registrations: cannot read registration: {err}")
+                result.append((False, "try again later"))
+            elif not registration:
+                result.append((None, ""))
+            else:
+                result.append((registration, ""))
+        return result
 
     def list_participants(self, game_date: str) -> tuple[list[Registration], str]:
 
-        game, err = self._get_game(game_date)
-        if err:
-            self.log.info(f"list_participants: cannot validate game: {err}")
-            return [], "try again later"
-        
-        if not game:
-            return [], "" # Return empty set here, we don't care if game exist or not
-         
-        registrations, err = self.db.read_table("registrations", game.game_date)
-        self.log.info(f"Registrations: {registrations}")
+        registrations, err = self.db.read_table("registrations", game_date)
         if err:
             self.log.info(f"list_participants: cannot read registrations: {err}")
             return [], "try again later"
@@ -115,37 +94,16 @@ class Plutarch():
         registrations.sort(key=lambda x: (x.prio, x.requested_at))
 
         return registrations, ""
+    
 
-
-    def leave_game(self, user_name: str, game_date: str, payment_link: str) -> tuple[bool, bool, str]:
+    def leave_game(self, player: Player, registration: Registration, payment_link: str) -> tuple[bool, bool, str]:
         """Tries to unregister the user and sell his slot
         Returns statuses for unregistration, selling and error why they might fail, if any
         True True "" means unregistered, sold, without errors
         True False "some error" means user was unregistered but his slot was not sold for some error
         False False "some error" means user was not unregistered neither his slot was sold
         """
-        # Check if person can sell the slot
-        # Eligable candidates must
-        #   have prio 1
-        #   be registered
-        #   not in list of seller already (cannot register/sell twice)
 
-        player, err = self._get_player(user_name)
-        if err:
-            self.log.info(f"leave_game: cannot get player details: {err}")
-            return  False, False, "try again later"
-        
-        if not player:
-            return False, False, "you are not an active member"
-        
-        registration, err = self.db.read(Registration(game_date=game_date, user_name=user_name))
-        if err:
-            self.log.info(f"leave_game: cannot read registrations: {err}")
-            return  False, False, "try again later"
-        
-        if not registration:
-            return False, False, f"you are not registered"
-        
         # Unregistering first regardless of priority
         # If subsequent placing to auction fails, user can retry by simply registering back
         _, err = self.db.delete(registration)
@@ -156,8 +114,15 @@ class Plutarch():
         if player.prio != Priorities.FULL:
             return True, False, "" # This is not an error
         
-        order = AvailableSlot(game_date=game_date, seller_user_name=user_name, requested_at=int(time.time()), tikkie_link=payment_link)
-        self.log.info(f"Placing order of {user_name} to auction")
+        order = AvailableSlot(
+            game_date=registration.game_date,
+            seller_user_name=player.user_name,
+            requested_at=int(time.time()),
+            tikkie_link=payment_link,
+            is_sent=0,
+            buyer_user_name="empty"
+            )
+        
         _, err = self.db.create(order)
         if err:
             self.log.info(f"leave_game: cannot sell slot: {err}")
@@ -170,10 +135,89 @@ class Plutarch():
         self.log.info(f"Moving {r.user_name} to a waiting list")
 
 
-    def _update_balance(self, p: Player):
+    def _update_balance(self, p: Player) -> tuple[bool, str]:
         self.log.info(f"Updating balance of {p.user_name}. Current balance {p.balance}")
-    
+        if p.balance <= 0:
+            return False, "" # Nothing to update
+        p.balance = p.balance -1
+        _, err = self.db.update(p)
+        if err:
+            self.log.info(f"update_balance: cannot query db: {err}")
+            return False, "try again later"
+        return True, ""
 
-    def collect_money(self, p: Player):
-        tikkie = "https://make-me-rich"
-        self.log.info(f"Sending tikkie to {p.user_name}. Link: {tikkie}")
+    def collect_money(self, p: Player, r: Registration) -> tuple[AvailableSlot| None, str]:
+        """Given Player and its registration
+        If Player balance > 0 updates balance
+        Otherwise tries to find a slot from auction
+        Then sent tikkie link back
+        In case no slots are available admin link is sent
+        """
+        # TODO: This is a VERY HEAVY query, need to optimize
+        admin_tikkie = "https://make-me-rich"
+        
+        updated, err = self._update_balance(p)
+        if err:
+            self.log.info(f"collect_money: cannot update balance: {err}")
+            return None, "try again later"
+        # We need to add a record just for the sake of it
+        if updated:
+            # Send admin link
+            slot = AvailableSlot(
+                game_date=r.game_date,
+                seller_user_name="admin",
+                tikkie_link="don't need to pay",
+                is_sent=1,
+                buyer_user_name=p.user_name,
+                requested_at=int(time.time())
+            )
+
+            _, err = self.db.create(slot)
+            if err:
+                self.log.info(f"collect_money: cannot write auction: {err}")
+                return None, "try again later" 
+            return slot, ""            
+
+        # Now we need to process remaining players (with balance = 0)
+        available_slots, err = self.db.read_table("auctions", r.game_date)
+        if err:
+            self.log.info(f"collect_money: cannot read auction: {err}")
+            return None, "try again later"
+        # The topmost slot that was not yet processed
+        slots = sorted(                                      
+            (x for x in available_slots if x.is_sent == 0),  # Filter before sorting
+            key=lambda x: x.requested_at                     # Sort by requested_at
+        )
+        # If we found some slots use it
+        if slots:
+            slot = slots[0]
+            slot.buyer_user_name = p.user_name
+        # If there are no slots to buy, send admin link
+        else:
+            # Send admin link
+            slot = AvailableSlot(
+                game_date=r.game_date,
+                seller_user_name="admin",
+                tikkie_link="pay to " + admin_tikkie,
+                is_sent=1,
+                buyer_user_name=p.user_name,
+                requested_at=int(time.time())
+            )
+            # TODO: Fix db.update
+            _, err = self.db.create(slot)
+            if err:
+                self.log.info(f"collect_money: cannot write auction: {err}")
+                return None, "try again later" 
+            return slot, ""
+        # Update DB
+        # TODO: Fix db.update
+        slot.is_sent = 1
+        _, err = self.db.delete(slot)
+        if err:
+            self.log.info(f"collect_money: cannot write auction: {err}")
+            return None, "try again later"
+        _, err = self.db.create(slot)
+        if err:
+            self.log.info(f"collect_money: cannot write auction: {err}")
+            return None, "try again later" 
+        return slot, ""
